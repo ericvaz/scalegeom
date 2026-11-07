@@ -7,3 +7,4 @@ build/
 examples/output/
 .data_cache/
 review/
+paper/*.docx
