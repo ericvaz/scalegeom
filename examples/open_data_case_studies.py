@@ -29,7 +29,7 @@ def model_robustness(family, metric, n_sim, seed=0):
     best = sg.fit_covariance(family, "auto", seed=seed)
     for m in MODELS:
         r = sg.information_loss_null(family, metric, m, n_sim=n_sim, seed=seed)
-        t.append({"model": m, "selected": m == best.model, "weighted_rss": best.scores[m],
+        t.append({"model": m, "selected": m == best.model, "criterion": min(v for k, v in best.scores.items() if k.split(" ")[0] == m),
                   "exits": r.exits, "of": len(family.path) - 1})
     return t
 
@@ -41,9 +41,25 @@ def run(out, n_sim=100):
     # 1 nested supports
     fam = D.nc_tracts_family("median_income")
     rep = sg.ScaleProtocol(fam, "queen", alt_metrics=["knn:6", "hops:2"], permutations=999).run(
-        n_sim=n_sim, fgw=False, title="NC median income: tracts to counties")
+        n_sim=n_sim, fgw=False, title="NC tract median income (population-weighted mean of tract medians): "
+                                      "tracts to counties")
+    rep.notes.append("The aggregated value of a county is the population-weighted mean of its tract medians, "
+                     "which is not the county median household income.")
     rep.add_table("model_robustness", model_robustness(fam, "queen", n_sim))
-    rep.add_table("invariance_pairs", sg.space.invariance_table(fam, method="pairs", quantiles=(0.01, 0.99)))
+    rep.add_table("distortion_pairs", sg.space.invariance_table(fam, method="pairs", quantiles=(0.01, 0.99)))
+    try:  # S-maup (Duque, Laniado and Polo 2018) for comparison, from PySAL's esda
+        from esda.smaup import Smaup
+        b = fam.path[0]
+        s = Smaup(b.n, fam.path[1].n, sg.morans_i(b.values, b.adjacency["queen"], 0).I)
+        rep.add_table("smaup", sg.Table([{"n": b.n, "k": fam.path[1].n, "rho": s.rho, "S_maup": s.smaup,
+                                          "critical_05": s.critical_05, "summary": s.summary}],
+                                        title="S-maup test of sensitivity to aggregation (PySAL esda)",
+                                        note="S-maup asks whether aggregating to k regions is likely to change "
+                                             "the distribution of the variable. It does not test whether the "
+                                             "observed change exceeds information loss, nor whether these "
+                                             "particular boundaries differ from random zonings."))
+    except ImportError:
+        pass
     rep.save(os.path.join(out, "1_nc_income_counties"))
     zn = rep["zoning_null"].rows[0]
     summary.append({"case": "1 NC income, tracts to counties", "units": f"{fam.path[0].n} to {fam.path[1].n}",

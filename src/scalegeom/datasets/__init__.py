@@ -86,7 +86,12 @@ def nc_tracts(variable: str = "median_income", weight: str | None = "pop", conti
 
 
 def nc_tracts_family(variable: str = "median_income", weight: str | None = "pop"):
-    """Nested family: tracts -> counties (100 counties)."""
+    """Nested family: tracts -> counties (100 counties).
+
+    Aggregated values are population-weighted means of the tract values. For
+    shares (broadband, bachelor's) this approximates the county share, using
+    total population as the denominator. For median_income it is the
+    population-weighted mean of tract medians, which is not the county median."""
     base = nc_tracts(variable, weight)
     return nested_family(base, [base.attributes["county"]], names=["counties"])
 

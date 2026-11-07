@@ -20,7 +20,7 @@ fields = [("A  one correlation length (12 cells)", sg.gaussian_random_field((160
 for ax, (title, f) in zip(axes, fields):
     fam = sg.raster_family(f, SCALES, zoning=None)
     traj = sg.ScaleProtocol(fam, "knn:8", permutations=0).trajectory(include_zoning=False)
-    res = sg.information_loss_null(fam, "knn:8", "gaussian", n_sim=100, seed=1)
+    res = sg.information_loss_null(fam, "knn:8", "auto", n_sim=100, seed=1)
     s = np.array(traj["s"], float)
     y = np.array(traj["moran_I"], float)
     lo, hi = np.array(res.table["moran_band_lo"]), np.array(res.table["moran_band_hi"])

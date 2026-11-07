@@ -77,9 +77,11 @@ def representation_space(family, alpha: float = 0.5, max_nodes: int = 800, seed:
     When a representation has more than max_nodes units it is subsampled, and
     subsampling alone produces a positive FGW distance. With floor=True each
     such representation's floor F is estimated from independent subsamples
-    and the debiased distance FGW(a, b) - (F_a + F_b) / 2 is reported next to
-    the raw value (in the spirit of debiased Sinkhorn divergences). Velocity
-    and the cumulative path use the debiased distance."""
+    and the adjusted distance FGW(a, b) - (F_a + F_b) / 2 is reported next to
+    the raw value. This is an empirical correction, analogous in form to the
+    self-distance terms of debiased Sinkhorn divergences but without their
+    guarantees: the adjusted value can be slightly negative and is not a
+    metric. Velocity and the cumulative path use the adjusted distance."""
     path = family.path
     floors = {}
 
@@ -137,7 +139,15 @@ def interscale_map(fine, coarse) -> np.ndarray:
 
 def bilipschitz(fine, coarse, family=None, n_sample: int = 150, method: str = "centroid",
                 quantiles=(0.0, 1.0), n_pairs: int = 20_000, seed: int = 0) -> dict:
-    """Empirical bi-Lipschitz constants (c, C) of the inter-scale centroid map.
+    """Empirical distortion constants (c, C) of the inter-scale centroid map on matched pairs.
+
+    Aggregation is many-to-one, so two fine units in the same coarse unit are
+    sent to the same point and no positive lower bound c can hold for the whole
+    map. The constants are therefore computed on pairs where the map separates
+    the units: either coarse units matched to their nearest fine unit, or
+    random pairs of fine units lying in distinct coarse units. They are the
+    empirical counterpart of the bi-Lipschitz condition of Vaz (2026),
+    Section 7, restricted to those pairs.
 
     method="centroid" (Vaz 2026, Section 9.7): a sample of coarse units is
         matched to the nearest fine-unit centroid and pairwise distances are
@@ -176,9 +186,11 @@ def bilipschitz(fine, coarse, family=None, n_sample: int = 150, method: str = "c
 
 
 def invariance_table(family, n_sample=150, method="centroid", quantiles=(0.0, 1.0), seed=0) -> Table:
-    t = Table(title="Invariance: empirical bi-Lipschitz constants of inter-scale maps",
-              note="C/c = 1 for an isometry; larger values mean neighbourhood-based quantities "
-                   "cannot be presumed transportable across the step.")
+    t = Table(title="Inter-scale distortion: empirical bi-Lipschitz constants on matched pairs",
+              note=f"Pairs: {'coarse units matched to their nearest fine unit' if method == 'centroid' else 'fine units in distinct coarse units'}. "
+                   "C/c = 1 for an isometry on these pairs; larger values mean neighbourhood-based "
+                   "quantities cannot be presumed transportable across the step. Pairs inside one "
+                   "coarse unit collapse to distance zero and are excluded by construction.")
     for i in range(len(family.path) - 1):
         a, b = family.path[i], family.path[i + 1]
         r = bilipschitz(a, b, family, n_sample, method, quantiles, seed=seed + i)

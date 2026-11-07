@@ -75,7 +75,7 @@ def _fmt(v, csv_mode=False):
         if math.isnan(v):
             return "" if csv_mode else "NA"
         if csv_mode:
-            return repr(v)
+            return repr(float(v))
         if v != 0 and (abs(v) < 1e-3 or abs(v) >= 1e5):
             return f"{v:.3e}"
         return f"{v:.3f}"

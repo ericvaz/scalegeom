@@ -1,0 +1,69 @@
+{
+  "about": "Provenance of the open datasets bundled with scalegeom. Rebuild with scripts/build_datasets.py.",
+  "built": "2026-11-07",
+  "datasets": [
+    {
+      "name": "nc_tracts",
+      "files": {
+        "nc_tracts.csv.gz": "1e18e92af2a371c5409d6702e1aed3d81bf51c7a2ba90c2357491e0cdb8649e6",
+        "nc_tracts_contiguity.npz": "38902fb18853b340033703cbc843e6e4f8ac3a0e8a4c025c5e4ab9f9b302a027",
+        "nc_tracts.geojson.gz": "c86282c11e8f2990314c0b8d46d4152d89198ca0300a05d5be6200c648106225"
+      },
+      "content": "2,660 North Carolina census tracts; median household income, total population, share of households with broadband, share of adults 25+ with a bachelor's degree; county codes; centroids; queen and rook contiguity; simplified polygons",
+      "sources": [
+        {
+          "product": "American Community Survey 2019-2023 5-year estimates",
+          "publisher": "U.S. Census Bureau",
+          "variables": [
+            "B19013_001E",
+            "B01003_001E",
+            "S2801_C02_014E",
+            "S1501_C02_015E"
+          ],
+          "access": "Census Data API (https://api.census.gov/data/2023/acs/acs5) or data.census.gov table export",
+          "retrieved": "2026-07"
+        },
+        {
+          "product": "2023 cartographic boundary file, census tracts, North Carolina (cb_2023_37_tract_500k)",
+          "publisher": "U.S. Census Bureau",
+          "url": "https://www2.census.gov/geo/tiger/GENZ2023/shp/cb_2023_37_tract_500k.zip"
+        }
+      ],
+      "licence": "Public domain (work of the U.S. government)",
+      "crs": "EPSG:32119 (NAD83 / North Carolina) for centroids; EPSG:4326 for the simplified polygons",
+      "processing": "scripts/build_datasets.py: join on GEOID, project, centroids, contiguity from polygons, polygons simplified at 100 m",
+      "caveats": [
+        "ACS values are survey estimates; margins of error are not included",
+        "32 tracts have no income estimate",
+        "median_income is a tract median; aggregated values are weighted means of medians, not regional medians"
+      ]
+    },
+    {
+      "name": "etopo_blue_ridge",
+      "files": {
+        "etopo_blue_ridge.npz": "0efe77c354e9385d91e0df6be0de8ad7d8c39bba24edebefa37b97a9623cf60d"
+      },
+      "content": "Elevation in metres, 160 x 160 cells at 1 arc-minute, 34.70 to 37.35 N, 83.70 to 81.05 W",
+      "sources": [
+        {
+          "product": "ETOPO1 1 Arc-Minute Global Relief Model",
+          "publisher": "NOAA National Centers for Environmental Information",
+          "citation": "Amante and Eakins (2009), doi:10.7289/V5C8276M",
+          "url": "https://coastwatch.pfeg.noaa.gov/erddap/griddap/etopo180"
+        }
+      ],
+      "licence": "Public domain (work of the U.S. government)",
+      "crs": "EPSG:4326 grid; cells about 1.85 km by 1.51 km at 36 N",
+      "processing": "scripts/build_datasets.py: ERDDAP subset, first 160 x 160 cells from the north-west corner",
+      "caveats": [
+        "geographic cells are slightly anisotropic in metres"
+      ]
+    },
+    {
+      "name": "simulated",
+      "files": {},
+      "content": "Scenarios A and B of Vaz (2026), generated from seeds by scalegeom.simulate",
+      "licence": "MIT"
+    }
+  ]
+}

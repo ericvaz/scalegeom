@@ -12,8 +12,8 @@ The package follows the four steps of the protocol in Section 10.4 of the paper.
 
 1. **State the representation.** Build a family of representations S(θ), θ = (s, ζ), from a raster (block means), points or polygons on square grids, or nested administrative supports such as dissemination areas, census tracts and subdivisions. Every family records how each base unit was aggregated.
 2. **Report trajectories.** At every scale and lattice placement, compute Moran's I under a stated induced metric, the share of variance retained, short-lag semivariance, and the correlation-threshold range proxy. Alternative metrics (k-nearest neighbours, distance bands, queen or rook contiguity, network hops, or a supplied distance matrix such as travel time) are reported side by side.
-3. **Test against the change-of-support null.** A covariance model is fitted at the finest scale, fields are simulated from it and pushed through the same aggregation operators, and the observed trajectories are compared with the Monte Carlo band. For nested supports, a second null compares each administrative zoning with random size-matched zonings.
-4. **Check invariance.** Report empirical bi-Lipschitz constants of the inter-scale maps, and measure the family itself with fused Gromov-Wasserstein distances (scale velocity and zoning displacement).
+3. **Test against the change-of-support null.** A covariance model is selected and fitted at the finest scale, fields are simulated from it with the uncertainty of the fitted parameters propagated, pushed through the same aggregation operators, and the observed trajectories are compared with the Monte Carlo band. On simulated fields that satisfy the null, the test rejects about 2% of the time across all scales. For nested supports, a second null compares each administrative zoning with random size-matched zonings.
+4. **Check distortion.** Report empirical bi-Lipschitz constants of the inter-scale maps on the pairs of units they keep apart (aggregation is many-to-one, so a strict bound cannot hold), and measure the family itself with fused Gromov-Wasserstein distances (scale velocity and zoning displacement).
 
 A separate function reports global and local Moran's I for one support under several induced metrics, with LISA cluster labels and their agreement (Section 9.9 of the paper).
 
@@ -74,7 +74,7 @@ report = sg.ScaleProtocol(family, metric="queen").run()
 elevation = datasets.etopo_family()                       # 160 x 160 ETOPO1 grid, block sizes 1 to 16
 ```
 
-`python examples/open_data_case_studies.py` runs four case studies in about 20 seconds. Two results show what the protocol adds. Elevation from the Blue Ridge to the Piedmont changes under aggregation as information loss alone predicts, so conclusions drawn at one resolution carry to the others. Median household income in North Carolina does not: from 5 km grids upward its dependence persists more than a single stationary structure allows, under each of the three covariance models, and county boundaries keep 19% of tract-level variance where random zonings of the same size keep 45%.
+`python examples/open_data_case_studies.py` runs four case studies in about 20 seconds. Two results show what the protocol adds. Elevation from the Blue Ridge to the Piedmont changes under aggregation in a way consistent with the fitted information-loss model. Tract median income in North Carolina, aggregated as a population-weighted mean of tract medians, does not: from 5 km grids upward its dependence persists more than a single stationary structure allows, under each of the three covariance models, and county boundaries keep 19% of tract-level variance where random zonings of the same size keep 45%.
 
 ## Reproducing the paper
 
@@ -86,10 +86,13 @@ The script reruns the simulation study and the North Carolina analysis in about 
 
 ## Implementation notes
 
+Full details, including the calibration study, are in [docs/methods.md](docs/methods.md).
+
+
 - Moran's I agrees with PySAL's esda to machine precision and local Moran quadrants agree exactly; permutation inference follows esda's conventions.
 - Semivariograms and correlation profiles use one normalized lag grid for every scale, with lags normalized by the domain extent and semivariances standardized by the base moments.
-- The covariance model for the null is fitted at the mean pair distance of each lag bin with Cressie weights, anchored by the exact nearest-neighbour semivariance. The base scale is inside the band by construction, and Moran's I is tested as change from the base.
-- Fused Gromov-Wasserstein distances start the solver from the optimal transport plan between unit locations. Representations larger than `max_nodes` are subsampled; because subsampling alone produces a positive distance, each such representation's floor is estimated and a debiased distance is reported next to the raw one.
+- The covariance model for the null is chosen among Gaussian, exponential and spherical forms, with and without a nugget, by a penalized weighted fit at the mean pair distance of each lag bin, anchored by the exact nearest-neighbour semivariance. Parameter uncertainty is propagated by parametric bootstrap. Moran's I is tested as change from the base.
+- Fused Gromov-Wasserstein distances start the solver from the optimal transport plan between unit locations. Representations larger than `max_nodes` are subsampled; because subsampling alone produces a positive distance, each such representation's floor is estimated and an adjusted distance (an empirical correction, not a metric) is reported next to the raw one.
 
 ## Tests
 

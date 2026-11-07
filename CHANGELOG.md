@@ -7,6 +7,12 @@
 - `examples/open_data_case_studies.py`: four case studies on the bundled data, each null repeated under every covariance model.
 - The change-of-support null now selects its covariance model by weighted fit (`model="auto"`, the new default). On the elevation data a Gaussian model made the null reject at every scale while the better-fitting exponential model did not.
 - The covariance of point and polygon supports is factored once per null test, which makes 100 simulations on a few thousand units take seconds.
+- The null propagates the uncertainty of the fitted covariance parameters by parametric bootstrap (`uncertainty=True`, the default). A calibration study (`examples/null_calibration.py`, `docs/methods.md`) showed that with parameters treated as known the test rejected about a quarter of rough stationary fields at the first aggregation step; with the bootstrap the false-rejection rate across all scales is about 2%. Bands are wider than in 0.1.0.
+- Model selection now also decides whether to include a nugget, using an AIC-type criterion on the weighted fit.
+- The inter-scale distortion is documented and labelled as empirical bi-Lipschitz constants on matched pairs, since aggregation is many-to-one. The FGW adjustment for subsampling is described as an empirical correction.
+- S-maup (Duque, Laniado and Polo 2018, via esda) is reported next to the nulls in the nested case study.
+- Bundled data have a manifest with sources, licences and SHA-256 checksums, checked by the tests.
+- Fixed: CSV output wrote NumPy floats as `np.float64(...)`.
 
 ## 0.1.0 (2026-11-07)
 

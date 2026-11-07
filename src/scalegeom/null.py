@@ -32,19 +32,25 @@ MODELS = ("gaussian", "exponential", "spherical")
 
 
 def fit_covariance(family, model: str = "auto", edges=DEFAULT_LAG_EDGES,
-                   max_pairs: int = 200_000, seed: int = 0, nugget: bool = True) -> CovModel:
+                   max_pairs: int = 200_000, seed: int = 0, nugget="auto") -> CovModel:
     """Fit a covariance model to the empirical semivariogram of the base
     representation (values standardized by the base moments, normalized lags).
 
     model="auto" fits the Gaussian, exponential and spherical models and keeps
-    the one with the smallest weighted residual sum of squares; the scores of
-    all three are stored in `.scores`. The choice matters: a smooth (Gaussian)
-    model fitted to a rough field predicts too little information loss under
-    aggregation and makes the null reject spuriously."""
-    if model == "auto":
-        fits = [fit_covariance(family, m, edges, max_pairs, seed, nugget) for m in MODELS]
-        best = min(fits, key=lambda m: m.wrss)
-        best.scores = {m.model: m.wrss for m in fits}
+    the best. nugget="auto" fits each model with and without a nugget. The
+    candidates are compared by an AIC-type criterion on the weighted residual
+    sum of squares, m log(WRSS / m) + 2 p, so a nugget is kept only when it
+    improves the fit enough to justify the extra parameter. Both choices
+    matter for the null: a smooth model fitted to a rough field, or a spurious
+    nugget, changes the predicted behaviour at the first aggregation steps and
+    makes the test reject when it should not (see examples/null_calibration.py).
+    The criterion of every candidate is stored in `.scores`."""
+    if model == "auto" or nugget == "auto":
+        models = MODELS if model == "auto" else (model,)
+        nuggets = (False, True) if nugget == "auto" else (bool(nugget),)
+        fits = [fit_covariance(family, m, edges, max_pairs, seed, ng) for m in models for ng in nuggets]
+        best = min(fits, key=lambda m: m.aic)
+        best.scores = {(m.model + (" + nugget" if m.has_nugget else "")): m.aic for m in fits}
         return best
     from scipy.spatial import cKDTree
     base = family.base
@@ -67,17 +73,23 @@ def fit_covariance(family, model: str = "auto", edges=DEFAULT_LAG_EDGES,
     if len(h) < 3:
         raise ValueError("too few populated lag bins to fit a covariance model")
 
-    def f(hh, sill, length, nug):
-        return CovModel(model, sill, length, nug if nugget else 0.0).gamma(hh)
+    gmax = max(g.max(), 1e-6)
+    p0 = [gmax, max(h[np.argmax(g >= 0.63 * g.max())], h[0]) / 2, 0.0]
+    lo, hi = [1e-9, 1e-6, 0.0], [10 * gmax, 10.0, gmax]
+    k = 3 if nugget else 2
 
-    p0 = [max(g.max(), 1e-6), max(h[np.argmax(g >= 0.63 * g.max())], h[0]) / 2, 0.0]
-    bounds = ([1e-9, 1e-6, 0.0], [10 * max(g.max(), 1e-6), 10.0, max(g.max(), 1e-6)])
+    def f(hh, *p):
+        return CovModel(model, p[0], p[1], p[2] if nugget else 0.0).gamma(hh)
+
     try:
-        (sill, length, nug), _ = curve_fit(f, h, g, p0=p0, sigma=sigma, bounds=bounds, maxfev=20_000)
+        p, _ = curve_fit(f, h, g, p0=p0[:k], sigma=sigma, bounds=(lo[:k], hi[:k]), maxfev=20_000)
     except RuntimeError:
-        sill, length, nug = p0
-    out = CovModel(model, float(sill), float(length), float(nug) if nugget else 0.0)
+        p = p0[:k]
+    out = CovModel(model, float(p[0]), float(p[1]), float(p[2]) if nugget else 0.0)
     out.wrss = float(np.sum(((g - out.gamma(h)) / sigma) ** 2))
+    m = len(h)
+    out.aic = float(m * np.log(max(out.wrss, 1e-12) / m) + 2 * k)
+    out.has_nugget = bool(nugget)
     return out
 
 
@@ -154,11 +166,26 @@ def _trajectory(family, base_values, weights):
     return np.array(var_ratio), np.array(moran)
 
 
+def _with_base_values(family, values):
+    import copy
+    fam = copy.copy(family)
+    fam.path = [family.base.with_values(values)] + list(family.path[1:])
+    return fam
+
+
 def information_loss_null(family, metric: str = "knn:8", model="auto", n_sim: int = 100,
-                          width: float = 2.5, seed: int = 0, observed: bool = True) -> NullResult:
+                          width: float = 2.5, seed: int = 0, observed: bool = True,
+                          uncertainty: bool = True) -> NullResult:
     """Monte Carlo change-of-support band for the variance and Moran trajectories.
 
-    model : a CovModel, or the name of a model to fit at the base scale."""
+    model : a CovModel, or the name of a model to fit at the base scale.
+    uncertainty : propagate the uncertainty of the fitted covariance parameters
+        by parametric bootstrap. Each simulation draws a field from the fitted
+        model, refits the same model form to that field, and simulates the
+        trajectory from the refitted parameters. Without this the band treats
+        the fitted parameters as known and is too narrow for rough fields,
+        where the first aggregation steps depend strongly on the estimated
+        short-range covariance (see examples/null_calibration.py)."""
     if isinstance(model, str):
         model = fit_covariance(family, model, seed=seed)
     weights = [row_standardize(induced_adjacency(r, metric, family)) for r in family.path]
@@ -166,8 +193,12 @@ def information_loss_null(family, metric: str = "knn:8", model="auto", n_sim: in
     V = np.empty((n_sim, len(family.path)))
     M = np.empty_like(V)
     draw = _base_simulator(family, model)
+    nug = getattr(model, "has_nugget", model.nugget > 0)
     for k in range(n_sim):
         f = draw(rng)
+        if uncertainty:
+            refit = fit_covariance(_with_base_values(family, f), model.model, seed=seed + 1 + k, nugget=nug)
+            f = _base_simulator(family, refit)(rng)
         V[k], M[k] = _trajectory(family, f, weights)
     obs_v, obs_m = _trajectory(family, family.base.values, weights) if observed else (None, None)
     pred = regularization_prediction(family, model, seed=seed)

@@ -6,7 +6,8 @@
           trajectories rather than single values;
     (iii) test those trajectories against the change-of-support null;
     (iv)  where neighbourhood-based conclusions are transported across
-          resolutions, report the bi-Lipschitz distortion of inter-scale maps.
+          resolutions, report the distortion of inter-scale maps (empirical
+          bi-Lipschitz constants on matched pairs; see space.bilipschitz).
 
 The representation space (FGW distance, scale velocity, zoning displacement)
 is available as an additional measurement of the family itself.
@@ -169,7 +170,7 @@ class ScaleProtocol:
             if "zoning" in res:
                 rep.add_table("zoning_null", res["zoning"])
         if invariance and len(self.family.path) > 1:
-            say(55, "Step (iv): bi-Lipschitz invariance")
+            say(55, "Step (iv): inter-scale distortion")
             rep.add_table("invariance", self.invariance())
         sp = None
         if fgw and len(self.family.path) > 1:

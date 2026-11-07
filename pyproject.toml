@@ -35,4 +35,4 @@ Issues = "https://github.com/ericvaz/scalegeom/issues"
 where = ["src"]
 
 [tool.setuptools.package-data]
-scalegeom = ["datasets/data/*"]
+scalegeom = ["datasets/data/*", "datasets/manifest.json"]

@@ -114,3 +114,25 @@ def test_etopo_model_choice_and_null():
 def test_datasets_listing():
     t = D.available()
     assert set(t["name"]) == {"nc_tracts", "etopo_blue_ridge", "simulated"}
+
+
+def test_manifest_checksums():
+    import hashlib
+    manifest = json.load(open(os.path.join(os.path.dirname(D.__file__), "manifest.json")))
+    for d in manifest["datasets"]:
+        for fname, digest in d["files"].items():
+            data = open(os.path.join(D.DATA, fname), "rb").read()
+            assert hashlib.sha256(data).hexdigest() == digest, fname
+
+
+def test_null_calibration_smoke():
+    """With parameter uncertainty propagated, rough stationary fields rarely leave the band
+    (examples/null_calibration.py measures the rate on 100 fields per model)."""
+    from scalegeom.simulate import CovModel, simulate_grid
+    truth = CovModel("exponential", 1.0, 10 / 96)
+    rng = np.random.default_rng(7)
+    exits = 0
+    for k in range(5):
+        fam = sg.raster_family(simulate_grid(truth, (96, 96), 1 / 96, rng), [1, 2, 4, 8, 16], zoning=None)
+        exits += sg.information_loss_null(fam, "knn:8", "auto", n_sim=30, seed=k).exits > 0
+    assert exits <= 1
