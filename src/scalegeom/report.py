@@ -71,9 +71,8 @@ class Report:
                 b64 = base64.b64encode(self._png(fig)).decode()
                 parts.append(f"<figure><img alt='{html.escape(name)}' src='data:image/png;base64,{b64}'>"
                              f"<figcaption>{html.escape(self.captions.get(name, ''))}</figcaption></figure>")
-        parts.append("<p class='note'>Method: Vaz, E. (2026). Scale-conditioned geometry: how measurement "
-                     "resolution induces distance, proximity, and spatial dependence. "
-                     "Geographical Analysis 58: e70061. https://doi.org/10.1111/gean.70061</p></body></html>")
+        from ._citation import REFERENCE
+        parts.append(f"<p class='note'>Please cite: {html.escape(REFERENCE)}</p></body></html>")
         text = "\n".join(parts)
         if path:
             with open(path, "w", encoding="utf-8") as fh:

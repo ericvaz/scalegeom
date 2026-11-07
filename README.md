@@ -4,6 +4,10 @@
 
 Scale-conditioned geometry for multiscale spatial analysis in Python.
 
+> **Citation.** If you use scalegeom, please cite the method paper:
+> Vaz, E. (2026). Scale-conditioned geometry: How measurement resolution induces distance, proximity, and spatial dependence. *Geographical Analysis*, 58(4), e70061. https://doi.org/10.1111/gean.70061
+> BibTeX is below and in `scalegeom.citation()`.
+
 scalegeom implements the scale-explicit workflow of Vaz (2026), *Scale-Conditioned Geometry: How Measurement Resolution Induces Distance, Proximity, and Spatial Dependence*, Geographical Analysis 58: e70061 ([doi:10.1111/gean.70061](https://doi.org/10.1111/gean.70061)). It treats scale as a parameter of the analysis: the same variable is represented at a family of resolutions and lattice placements, and distance, neighbourhood and dependence are recomputed on each representation, so their variation across scales becomes part of the evidence.
 
 ## What it does
@@ -107,4 +111,33 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Questions and bug reports go to the issu
 
 ## Citation
 
-Please cite the method paper (see `CITATION.cff`). Licence: MIT.
+scalegeom implements the method of the following paper. Please cite it in any work that uses the package:
+
+Vaz, E. (2026). Scale-conditioned geometry: How measurement resolution induces distance, proximity, and spatial dependence. *Geographical Analysis*, 58(4), e70061. https://doi.org/10.1111/gean.70061
+
+```bibtex
+@article{vaz2026scale,
+  author  = {Vaz, Eric},
+  title   = {Scale-Conditioned Geometry: How Measurement Resolution Induces Distance, Proximity, and Spatial Dependence},
+  journal = {Geographical Analysis},
+  year    = {2026},
+  volume  = {58},
+  number  = {4},
+  pages   = {e70061},
+  doi     = {10.1111/gean.70061}
+}
+```
+
+From Python:
+
+```python
+import scalegeom
+print(scalegeom.citation())            # formatted reference
+print(scalegeom.citation("bibtex"))    # BibTeX
+```
+
+GitHub's "Cite this repository" button uses `CITATION.cff`, which points to the same paper. If you use the bundled datasets, please also cite their sources (see [DATASETS.md](DATASETS.md)).
+
+## Licence
+
+MIT.

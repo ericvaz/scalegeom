@@ -187,3 +187,9 @@ def test_north_carolina_table3():
     assert I["knn:6"] == pytest.approx(0.192, abs=5e-4)
     assert I["queen"] == pytest.approx(0.231, abs=5e-4)
     assert I["hops:2"] == pytest.approx(0.152, abs=5e-4)
+
+
+def test_citation():
+    assert "10.1111/gean.70061" in sg.citation()
+    assert "@article{vaz2026scale" in sg.citation("bibtex")
+    assert "gean.70061" in sg.Report("x").to_html()
