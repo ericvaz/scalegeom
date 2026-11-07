@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scalegeom"
+version = "0.1.0"
+description = "Scale-conditioned geometry: diagnostics, change-of-support nulls and representation-space metrics for multiscale spatial analysis"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Eric Vaz", email = "evaz@torontomu.ca"}]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.22", "scipy>=1.8", "matplotlib>=3.5"]
+keywords = ["spatial analysis", "MAUP", "change of support", "scale", "Gromov-Wasserstein", "spatial autocorrelation"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering :: GIS",
+  "Intended Audience :: Science/Research",
+  "Development Status :: 3 - Alpha",
+]
+
+[project.optional-dependencies]
+fgw = ["pot>=0.9"]
+geo = ["geopandas>=0.13", "shapely>=2.0"]
+all = ["pot>=0.9", "geopandas>=0.13", "shapely>=2.0"]
+test = ["pytest", "esda", "libpysal", "pot>=0.9", "geopandas>=0.13", "shapely>=2.0"]
+
+[project.urls]
+Paper = "https://doi.org/10.1111/gean.70061"
+Source = "https://github.com/ericvaz/scalegeom"
+Issues = "https://github.com/ericvaz/scalegeom/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]

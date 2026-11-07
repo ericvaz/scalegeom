@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use scalegeom, please cite the method paper."
+title: "scalegeom: scale-conditioned geometry for spatial analysis"
+version: 0.1.0
+repository-code: "https://github.com/ericvaz/scalegeom"
+license: MIT
+authors:
+  - family-names: Vaz
+    given-names: Eric
+    affiliation: Toronto Metropolitan University
+preferred-citation:
+  type: article
+  title: "Scale-Conditioned Geometry: How Measurement Resolution Induces Distance, Proximity, and Spatial Dependence"
+  authors:
+    - family-names: Vaz
+      given-names: Eric
+  journal: Geographical Analysis
+  volume: 58
+  start: e70061
+  year: 2026
+  doi: 10.1111/gean.70061
