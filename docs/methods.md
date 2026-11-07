@@ -48,7 +48,10 @@ A departure from the band means the trajectory is inconsistent with information 
 
 | True model | Any scale | s = 2 | s = 4 | s = 8 | s = 16 |
 |---|---|---|---|---|---|
-| CALIBRATION_TABLE |
+| Gaussian (100 fields) | 1% | 0% | 0% | 0% | 1% |
+| Exponential (100 fields) | 2% | 2% | 0% | 0% | 0% |
+
+The covariance model was selected from the data each time: Gaussian in all 100 Gaussian fields, and exponential in 82 and spherical in 18 of the exponential fields. Each test used 60 null simulations. Raw results are in `docs/calibration.csv`.
 
 With parameters treated as known, the exponential fields were rejected at s = 2 in 24 to 28% of fields, because the first aggregation step depends strongly on the estimated short-range covariance. The parametric bootstrap removes this.
 

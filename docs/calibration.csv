@@ -1,0 +1,3 @@
+true_model,fields,any_scale_rate,models_selected,rate_s2,rate_s4,rate_s8,rate_s16
+gaussian,100,0.01,gaussian 100,0.0,0.0,0.0,0.01
+exponential,100,0.02,"exponential 82, spherical 18",0.02,0.0,0.0,0.0
