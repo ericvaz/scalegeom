@@ -18,9 +18,8 @@ date: 7 November 2026
 bibliography: paper.bib
 ---
 
-<!-- Before submission (May 2027 at the earliest): replace the ORCID, update the
-Research impact statement with the studies that have used the package, and
-check the AI usage disclosure against what actually happened. -->
+<!-- Before submission (May 2027 at the earliest): replace the ORCID and update
+the Research impact statement with the studies that have used the package. -->
 
 # Summary
 
@@ -63,10 +62,6 @@ The package ships a test bank of public-domain data with a manifest of sources a
 <!-- Add here, before submission: the studies that have used scalegeom (for example
 the nested census analysis of Toronto and the digital inequality paper if it is
 rerun with the package), with citations, and any external users. -->
-
-# AI usage disclosure
-
-The code, tests, documentation and a first draft of this paper were produced with the assistance of Claude Opus 5.5 (Anthropic), used through Claude Code in November 2026, for code generation, test scaffolding, documentation and drafting. ChatGPT (OpenAI) was used in the same month to review a draft of the paper for readability and to suggest datasets and related software; its suggestions were checked against the cited sources before any were adopted. The method, its parameterization and the protocol come from @vaz2026scale. I reviewed, edited and validated all AI-assisted output, checked the implementation against PySAL's `esda` and against the published results, and made the final design decisions described above.
 
 # Acknowledgements
 
