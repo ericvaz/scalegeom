@@ -66,6 +66,31 @@ def simulate_grid(model: CovModel, shape, spacing: float, rng=None, pad: int = 2
     return f
 
 
+def point_simulator(model: CovModel, xy: np.ndarray, exact_max: int = 3000, grid_max: int = 512):
+    """A function rng -> one realization at the points. For up to exact_max
+    points the covariance is factored once (Cholesky) and reused; beyond that
+    each call simulates a covering grid and samples the nearest cell."""
+    n = len(xy)
+    if n > exact_max:
+        return lambda rng: simulate_points(model, xy, rng, exact_max, grid_max)
+    d = np.hypot(xy[:, None, 0] - xy[None, :, 0], xy[:, None, 1] - xy[None, :, 1])
+    K = model.sill * model.rho(d) + 1e-10 * np.eye(n)
+    try:
+        L = np.linalg.cholesky(K)
+    except np.linalg.LinAlgError:
+        w, V = np.linalg.eigh(K)
+        L = V * np.sqrt(np.clip(w, 0, None))
+    del d, K
+
+    def draw(rng):
+        rng = np.random.default_rng(rng)
+        f = L @ rng.standard_normal(n)
+        if model.nugget > 0:
+            f = f + rng.normal(0, np.sqrt(model.nugget), n)
+        return f
+    return draw
+
+
 def simulate_points(model: CovModel, xy: np.ndarray, rng=None, exact_max: int = 3000,
                     grid_max: int = 512) -> np.ndarray:
     """One realization at arbitrary points: exact (Cholesky) for small n,
@@ -73,14 +98,7 @@ def simulate_points(model: CovModel, xy: np.ndarray, rng=None, exact_max: int = 
     rng = np.random.default_rng(rng)
     n = len(xy)
     if n <= exact_max:
-        d = np.hypot(xy[:, None, 0] - xy[None, :, 0], xy[:, None, 1] - xy[None, :, 1])
-        K = model.sill * model.rho(d) + 1e-10 * np.eye(n)
-        try:
-            L = np.linalg.cholesky(K)
-        except np.linalg.LinAlgError:
-            w, V = np.linalg.eigh(K)
-            L = V * np.sqrt(np.clip(w, 0, None))
-        f = L @ rng.standard_normal(n)
+        return point_simulator(model, xy, exact_max, grid_max)(rng)
     else:
         lo = xy.min(axis=0)
         span = (xy.max(axis=0) - lo).max()

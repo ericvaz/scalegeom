@@ -5,3 +5,4 @@ __pycache__/
 dist/
 build/
 examples/output/
+.data_cache/

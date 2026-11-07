@@ -61,6 +61,21 @@ rep = from_geodataframe(gpd.read_file("sids2.shp"), "SIDR74")
 sg.metric_sensitivity(rep, ["knn:6", "queen", "hops:2"]).save("nc_metrics")
 ```
 
+## Open data test bank
+
+`scalegeom.datasets` bundles a small set of public-domain data for testing and teaching (see [DATASETS.md](DATASETS.md)):
+
+```python
+from scalegeom import datasets
+
+family = datasets.nc_tracts_family("median_income")      # 2,628 tracts -> 100 counties
+report = sg.ScaleProtocol(family, metric="queen").run()
+
+elevation = datasets.etopo_family()                       # 160 x 160 ETOPO1 grid, block sizes 1 to 16
+```
+
+`python examples/open_data_case_studies.py` runs four case studies in about 20 seconds. Two results show what the protocol adds. Elevation from the Blue Ridge to the Piedmont changes under aggregation as information loss alone predicts, so conclusions drawn at one resolution carry to the others. Median household income in North Carolina does not: from 5 km grids upward its dependence persists more than a single stationary structure allows, under each of the three covariance models, and county boundaries keep 19% of tract-level variance where random zonings of the same size keep 45%.
+
 ## Reproducing the paper
 
 ```bash

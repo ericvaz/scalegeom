@@ -33,3 +33,6 @@ Issues = "https://github.com/ericvaz/scalegeom/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+scalegeom = ["datasets/data/*"]

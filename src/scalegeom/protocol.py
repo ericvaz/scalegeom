@@ -111,7 +111,7 @@ class ScaleProtocol:
         return t
 
     # ---------------------------------------------------------- step (iii)
-    def null_test(self, model="gaussian", n_sim: int = 100, width: float = 2.5, kind: str = "auto",
+    def null_test(self, model="auto", n_sim: int = 100, width: float = 2.5, kind: str = "auto",
                   seed: int | None = None):
         """kind="covariance": information-loss (change-of-support) null;
         kind="zoning": random size-matched zonings (nested supports);
@@ -143,7 +143,7 @@ class ScaleProtocol:
 
     # ---------------------------------------------------------- everything
     def run(self, null: bool = True, fgw: bool = True, invariance: bool = True, n_sim: int = 100,
-            model="gaussian", width: float = 2.5, alpha: float = 0.5, max_nodes: int = 800,
+            model="auto", width: float = 2.5, alpha: float = 0.5, max_nodes: int = 800,
             figures: bool = True, title: str = "Scale-conditioned analysis", progress=None) -> Report:
         """Run steps (i) to (iv) and the representation space; progress, if
         given, is called as progress(percent, message)."""

@@ -22,16 +22,30 @@ from scipy.optimize import curve_fit
 from .diagnostics import DEFAULT_LAG_EDGES, morans_i_fast, semivariogram
 from .metrics import induced_adjacency, row_standardize
 from .representation import voronoi_zoning
-from .simulate import CovModel, simulate_grid, simulate_points
+from .simulate import CovModel, point_simulator, simulate_grid
 from .table import Table
 
 
 # ---------------------------------------------------------------- model fitting
 
-def fit_covariance(family, model: str = "gaussian", edges=DEFAULT_LAG_EDGES,
+MODELS = ("gaussian", "exponential", "spherical")
+
+
+def fit_covariance(family, model: str = "auto", edges=DEFAULT_LAG_EDGES,
                    max_pairs: int = 200_000, seed: int = 0, nugget: bool = True) -> CovModel:
     """Fit a covariance model to the empirical semivariogram of the base
-    representation (values standardized by the base moments, normalized lags)."""
+    representation (values standardized by the base moments, normalized lags).
+
+    model="auto" fits the Gaussian, exponential and spherical models and keeps
+    the one with the smallest weighted residual sum of squares; the scores of
+    all three are stored in `.scores`. The choice matters: a smooth (Gaussian)
+    model fitted to a rough field predicts too little information loss under
+    aggregation and makes the null reject spuriously."""
+    if model == "auto":
+        fits = [fit_covariance(family, m, edges, max_pairs, seed, nugget) for m in MODELS]
+        best = min(fits, key=lambda m: m.wrss)
+        best.scores = {m.model: m.wrss for m in fits}
+        return best
     from scipy.spatial import cKDTree
     base = family.base
     mu, sd = family.reference_moments()
@@ -62,7 +76,9 @@ def fit_covariance(family, model: str = "gaussian", edges=DEFAULT_LAG_EDGES,
         (sill, length, nug), _ = curve_fit(f, h, g, p0=p0, sigma=sigma, bounds=bounds, maxfev=20_000)
     except RuntimeError:
         sill, length, nug = p0
-    return CovModel(model, float(sill), float(length), float(nug) if nugget else 0.0)
+    out = CovModel(model, float(sill), float(length), float(nug) if nugget else 0.0)
+    out.wrss = float(np.sum(((g - out.gamma(h)) / sigma) ** 2))
+    return out
 
 
 def regularization_prediction(family, model: CovModel, n_pairs: int = 20_000, seed: int = 0) -> np.ndarray:
@@ -116,13 +132,16 @@ class NullResult:
         return int(sum(1 for r in self.table.rows if r.get("exits")))
 
 
-def _simulate_base(family, model, rng):
-    base = family.base
+def _base_simulator(family, model):
+    """A function rng -> simulated base values for this family."""
     if family.kind == "raster":
         lat = family.lattice
-        g = simulate_grid(model, lat["shape"], lat["cellsize"] / family.extent, rng)
-        return g[lat["rows"], lat["cols"]]
-    return simulate_points(model, family.normalized(base), rng)
+
+        def draw(rng):
+            g = simulate_grid(model, lat["shape"], lat["cellsize"] / family.extent, rng)
+            return g[lat["rows"], lat["cols"]]
+        return draw
+    return point_simulator(model, family.normalized(family.base))
 
 
 def _trajectory(family, base_values, weights):
@@ -135,7 +154,7 @@ def _trajectory(family, base_values, weights):
     return np.array(var_ratio), np.array(moran)
 
 
-def information_loss_null(family, metric: str = "knn:8", model="gaussian", n_sim: int = 100,
+def information_loss_null(family, metric: str = "knn:8", model="auto", n_sim: int = 100,
                           width: float = 2.5, seed: int = 0, observed: bool = True) -> NullResult:
     """Monte Carlo change-of-support band for the variance and Moran trajectories.
 
@@ -146,14 +165,18 @@ def information_loss_null(family, metric: str = "knn:8", model="gaussian", n_sim
     rng = np.random.default_rng(seed)
     V = np.empty((n_sim, len(family.path)))
     M = np.empty_like(V)
+    draw = _base_simulator(family, model)
     for k in range(n_sim):
-        f = _simulate_base(family, model, rng)
+        f = draw(rng)
         V[k], M[k] = _trajectory(family, f, weights)
     obs_v, obs_m = _trajectory(family, family.base.values, weights) if observed else (None, None)
     pred = regularization_prediction(family, model, seed=seed)
     t = Table(title=f"Change-of-support null ({n_sim} simulations, band = mean +/- {width:g} SD)",
               note=f"Covariance fitted at the base scale: {model.model}, sill {model.sill:.3f}, "
-                   f"length {model.length:.4f} (normalized units), nugget {model.nugget:.3f}. "
+                   f"length {model.length:.4f} (normalized units), nugget {model.nugget:.3f}"
+                   + (" (selected by weighted fit among " + ", ".join(f"{k} {v:.1f}" for k, v in
+                                                                    model.scores.items()) + "). "
+                      if getattr(model, "scores", None) else ". ") +
                    f"Weights: {metric}. Both diagnostics are tested as change from the base: the "
                    "variance as a share of base variance, Moran's I as I(s) - I(base). Bands are "
                    "drawn around the observed base value.")
