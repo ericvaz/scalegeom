@@ -10,3 +10,5 @@ review/
 paper/*.docx
 paper_tgis/*.docx
 .DS_Store
+paper_tgis/manuscript.md
+paper_tgis/figures/
