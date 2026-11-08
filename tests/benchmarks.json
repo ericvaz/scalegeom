@@ -1,24 +1,86 @@
 {
   "about": "Known-answer test bank for scalegeom. 'published' values come from Vaz (2026), Geographical Analysis 58: e70061; 'data' values check the bundled open datasets against their sources; 'regression' values were pinned on 2026-11-07 so that later changes to the code are noticed. A change to a regression value must be explained in CHANGELOG.md.",
   "published": {
-    "nc_sids74_moran": {"knn:6": 0.192, "queen": 0.231, "hops:2": 0.152, "tolerance": 0.0005,
-                        "source": "Table 3"},
-    "scenario_A_exits": {"max": 1, "source": "Section 9.8, single correlation length stays in the band"},
-    "scenario_B_exits": {"min": 5, "source": "Section 9.8, exits at six of seven scales"}
+    "nc_sids74_moran": {
+      "knn:6": 0.192,
+      "queen": 0.231,
+      "hops:2": 0.152,
+      "tolerance": 0.0005,
+      "source": "Table 3"
+    },
+    "scenario_A_exits": {
+      "max": 1,
+      "source": "Section 9.8, single correlation length stays in the band"
+    },
+    "scenario_B_exits": {
+      "min": 5,
+      "source": "Section 9.8, exits at six of seven scales"
+    }
   },
   "data": {
-    "nc_tracts": {"tracts": 2660, "with_income": 2628, "with_broadband": 2643, "counties": 100,
-                  "queen_pairs": 8133, "check_geoid": "37001020100", "check_income": 63846, "check_pop": 4376},
-    "etopo_blue_ridge": {"shape": [160, 160], "min": 120.0, "max": 1852.0, "mean": 599.2634, "tolerance": 0.001}
+    "nc_tracts": {
+      "tracts": 2660,
+      "with_income": 2628,
+      "with_broadband": 2643,
+      "counties": 100,
+      "queen_pairs": 8133,
+      "check_geoid": "37001020100",
+      "check_income": 63846,
+      "check_pop": 4376
+    },
+    "etopo_blue_ridge": {
+      "shape": [
+        160,
+        160
+      ],
+      "min": 120.0,
+      "max": 1852.0,
+      "mean": 599.2634,
+      "tolerance": 0.001
+    }
   },
   "regression": {
-    "nc_income_tract_moran_queen": {"value": 0.5901, "tolerance": 0.0005},
-    "nc_income_county_moran_queen": {"value": 0.4614, "tolerance": 0.0005},
-    "nc_income_county_var_retained": {"value": 0.1915, "tolerance": 0.0005},
-    "nc_income_zoning_null_z_var": {"max": -2.5, "n_sim": 30, "seed": 3000},
-    "nc_broadband_tract_moran_queen": {"value": 0.4568, "tolerance": 0.0005},
-    "nc_income_grid_null_exits": {"min": 3, "of": 4, "n_sim": 60},
-    "etopo_selected_model": {"value": "exponential"},
-    "etopo_null_exits": {"max": 1, "of": 6, "n_sim": 60}
+    "nc_income_tract_moran_queen": {
+      "value": 0.5901,
+      "tolerance": 0.0005
+    },
+    "nc_income_county_moran_queen": {
+      "value": 0.4614,
+      "tolerance": 0.0005
+    },
+    "nc_income_county_var_retained": {
+      "value": 0.1915,
+      "tolerance": 0.0005,
+      "note": "unweighted variance of county values over unweighted variance of tract values"
+    },
+    "nc_income_zoning_null_z_var": {
+      "voronoi_max": -2.5,
+      "size_matched_abs_max": 2.5,
+      "n_sim": 30,
+      "seed": 3000,
+      "note": "changed in 0.2.0: weighted variance; the default zoning null now matches zone sizes and contiguity"
+    },
+    "nc_broadband_tract_moran_queen": {
+      "value": 0.4568,
+      "tolerance": 0.0005
+    },
+    "nc_income_grid_null_exits": {
+      "min": 3,
+      "of": 4,
+      "n_sim": 60
+    },
+    "etopo_selected_model": {
+      "value": "exponential"
+    },
+    "etopo_null_exits": {
+      "max": 1,
+      "of": 6,
+      "n_sim": 60
+    },
+    "nc_income_county_var_retained_weighted": {
+      "value": 0.3024,
+      "tolerance": 0.0005,
+      "note": "population-weighted variance (between-county share), the default since 0.2.0"
+    }
   }
 }

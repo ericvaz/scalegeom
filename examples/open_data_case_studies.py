@@ -65,7 +65,8 @@ def run(out, n_sim=100):
     summary.append({"case": "1 NC income, tracts to counties", "units": f"{fam.path[0].n} to {fam.path[1].n}",
                     "model": rep.meta["null_model"]["model"], "null_exits": rep.meta["null_exits"],
                     "finding": f"counties keep {zn['var_observed']:.0%} of tract variance vs "
-                               f"{zn['var_null_mean']:.0%} for random zonings (z = {zn['z_var']:.1f})"})
+                               f"{zn['var_null_mean']:.0%} for tract-count-matched contiguous random zonings "
+                               f"(z = {zn['z_var']:.1f})"})
 
     # 2 grids
     fam2 = D.nc_tracts_grid_family("median_income", cell_sizes_km=(5, 10, 20, 40))
@@ -75,8 +76,8 @@ def run(out, n_sim=100):
     rep2.save(os.path.join(out, "2_nc_income_grids"))
     summary.append({"case": "2 NC income, 5 to 40 km grids", "units": f"{fam2.path[0].n} to {fam2.path[-1].n}",
                     "model": rep2.meta["null_model"]["model"], "null_exits": rep2.meta["null_exits"],
-                    "finding": "variance falls faster and dependence persists longer than a single "
-                               "stationary structure predicts"})
+                    "finding": "population-weighted variance falls faster than a single stationary "
+                               "structure predicts"})
 
     # 3 metric sensitivity
     rep3 = sg.metric_sensitivity(D.nc_tracts("pct_broadband"), ["knn:6", "queen", "hops:2"], permutations=999,
@@ -86,7 +87,7 @@ def run(out, n_sim=100):
     summary.append({"case": "3 NC broadband, three metrics", "units": D.nc_tracts("pct_broadband").n,
                     "model": "", "null_exits": "",
                     "finding": f"Moran's I {min(rep3['metrics']['moran_I']):.2f} to {max(rep3['metrics']['moran_I']):.2f}; "
-                               f"k-NN and two-hop cluster labels agree for {ag[0]['hops:2']:.0%} of tracts"})
+                               f"k-NN and two-hop labels agree for {ag[0]['hops:2 (significant units)']:.0%} of significant tracts"})
 
     # 4 elevation
     fam4 = D.etopo_family()

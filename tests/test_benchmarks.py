@@ -82,12 +82,19 @@ def test_nc_income_trajectory(nc_income):
             REG[key]["value"], abs=REG[key]["tolerance"])
     exp = REG["nc_income_county_var_retained"]
     assert np.var(c.values) / np.var(b.values) == pytest.approx(exp["value"], abs=exp["tolerance"])
+    exp = REG["nc_income_county_var_retained_weighted"]
+    assert sg.weighted_variance(c.values, c.mass) / sg.weighted_variance(b.values, b.mass) == pytest.approx(
+        exp["value"], abs=exp["tolerance"])
 
 
 def test_nc_income_zoning_null(nc_income):
+    """Counties differ from equal-size random zonings, but not from contiguous
+    random zonings with the counties' own distribution of zone sizes."""
     exp = REG["nc_income_zoning_null_z_var"]
-    t = sg.zoning_null(nc_income, "queen", exp["n_sim"], seed=exp["seed"])
-    assert t.rows[0]["z_var"] < exp["max"]
+    t = sg.zoning_null(nc_income, "queen", exp["n_sim"], seed=exp["seed"], method="voronoi")
+    assert t.rows[0]["z_var"] < exp["voronoi_max"]
+    t = sg.zoning_null(nc_income, "queen", exp["n_sim"], seed=exp["seed"], method="size_matched")
+    assert abs(t.rows[0]["z_var"]) < exp["size_matched_abs_max"]
 
 
 def test_nc_broadband_moran():

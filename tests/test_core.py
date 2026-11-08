@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 import scalegeom as sg
+from scalegeom import datasets as D
 from scalegeom.metrics import hops, induced_adjacency, knn
 from scalegeom.space import bilipschitz, interscale_map
 
@@ -193,3 +194,80 @@ def test_citation():
     assert "10.1111/gean.70061" in sg.citation()
     assert "@article{vaz2026scale" in sg.citation("bibtex")
     assert "gean.70061" in sg.Report("x").to_html()
+
+
+# ------------------------------------------------------------------ added in 0.2.0
+
+def _irregular_family(seed=0, n=400):
+    rng = np.random.default_rng(seed)
+    xy = rng.uniform(0, 100, (n, 2))
+    vals = rng.normal(size=n)
+    mass = rng.uniform(1, 10, n)
+    base = sg.from_points(xy, vals, mass)
+    return base, sg.grid_family(base, [10.0, 25.0], zoning=None)
+
+
+def test_weighted_variance_is_between_share():
+    """Weighted variance of mass-weighted zone means over the base variance is
+    the between-zone share: it equals 1 - within-zone share exactly."""
+    base, fam = _irregular_family()
+    w = base.mass / base.mass.sum()
+    for rep in fam.path[1:]:
+        lab = rep.members
+        means = rep.values[lab]
+        m = np.sum(w * base.values)
+        total = np.sum(w * (base.values - m) ** 2)
+        within = np.sum(w * (base.values - means) ** 2)
+        ratio = sg.weighted_variance(rep.values, rep.mass) / sg.weighted_variance(base.values, base.mass)
+        assert ratio == pytest.approx(1 - within / total, abs=1e-12)
+        assert 0 <= ratio <= 1
+
+
+def test_aggregation_of_zone_constant_and_zone_centred_fields():
+    """A field constant within zones keeps all its variance; a field whose
+    zone means are all equal keeps none."""
+    base, fam = _irregular_family(1)
+    rep = fam.path[-1]
+    lab = rep.members
+    const = np.arange(rep.n, dtype=float)[lab]
+    v = fam.aggregate_values(const, rep)
+    assert np.allclose(v, np.arange(rep.n))
+    assert sg.weighted_variance(v, rep.mass) / sg.weighted_variance(const, base.mass) == pytest.approx(1.0)
+    w = base.mass
+    centred = base.values - (np.bincount(lab, w * base.values) / np.bincount(lab, w))[lab]
+    v2 = fam.aggregate_values(centred, rep)
+    assert np.allclose(v2, 0, atol=1e-12)
+
+
+def test_contiguous_zoning_is_contiguous_and_size_matched():
+    from scipy.sparse.csgraph import connected_components
+    from scalegeom.representation import _contiguity_graph
+    fam = D.nc_tracts_family("median_income")
+    base, cty = fam.path
+    sizes = np.bincount(cty.members)
+    G = _contiguity_graph(base)
+    z = sg.contiguous_zoning(base, sizes, seed=5, graph=G)
+    assert z.n == cty.n
+    for g in range(z.n):
+        idx = np.flatnonzero(z.members == g)
+        assert connected_components(G[idx][:, idx], directed=False)[0] == 1
+    got = np.sort(np.bincount(z.members))[::-1]
+    want = np.sort(sizes)[::-1]
+    assert got.sum() == want.sum()
+    assert np.corrcoef(got, want)[0, 1] > 0.9
+
+
+def test_fdr_matches_benjamini_hochberg():
+    from scalegeom.diagnostics import fdr_significant
+    p = np.array([0.001, 0.008, 0.039, 0.041, 0.042, 0.06, 0.074, 0.205, 0.212, 0.216])
+    # BH at q = 0.05 with n = 10: thresholds 0.005, 0.010, 0.015, ...; the two smallest pass
+    assert fdr_significant(p, 0.05).tolist() == [True, True] + [False] * 8
+    assert fdr_significant(np.full(5, 0.5), 0.05).sum() == 0
+
+
+def test_simultaneous_test_is_reported():
+    a = sg.raster_family(sg.gaussian_random_field((48, 48), 6, seed=3), [1, 2, 4], zoning=None)
+    r = sg.information_loss_null(a, "knn:8", "gaussian", n_sim=40, seed=0)
+    s = r.simultaneous
+    assert s["critical"] > 0 and 0 < s["p"] <= 1
+    assert s["rejects"] == (s["statistic"] > s["critical"])

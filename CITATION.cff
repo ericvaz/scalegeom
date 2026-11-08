@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use scalegeom, please cite the method paper below (Vaz 2026, Geographical Analysis)."
 title: "scalegeom: scale-conditioned geometry for spatial analysis"
-version: 0.1.0
+version: 0.2.0
 date-released: 2026-11-07
 repository-code: "https://github.com/ericvaz/scalegeom"
 license: MIT

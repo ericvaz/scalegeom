@@ -29,35 +29,40 @@ Strictly, `knn` and `hops` are neighbourhood rules built from a metric. Weights 
 - Moran's I and local Moran follow esda's conventions, including conditional permutation for local statistics and folded pseudo p-values. On the same weights, global I agrees with esda to machine precision and local quadrants agree exactly (tests/test_core.py).
 - Semivariograms and correlation profiles use one lag grid for all scales (15 bins from 0 to 0.5 of the domain extent by default, right-closed). Semivariances standardize values by the base mean and standard deviation, so levels are comparable across scales. Correlation profiles standardize within each scale.
 - The range proxy is the smallest lag at which the correlation profile falls below τ (0.1 by default), interpolated linearly between bin centres.
-- Variance retained is the unweighted variance of unit values divided by that of the base.
+- Variance retained is the variance of unit values weighted by each unit's measure, divided by the weighted variance of the base. With measure-weighted means as the aggregation operator, this is the between-unit share of the base variance, between 0 and 1. Trajectories also report the unweighted ratio (`var_retained_unweighted`), which counts every unit once; the nulls take `weighted=False` for it.
 
 ## Change-of-support null
 
-1. **Fit.** The empirical semivariogram of the base is computed on the lag grid. Each bin enters the fit at its mean pair distance, not its centre, with Cressie (1985) weights N(h) / γ(h)². The exact nearest-neighbour semivariance is added as the shortest lag, because random pair sampling resolves short lags poorly. Fitting at bin centres produced a spurious nugget that pushed even the base scale outside its own band.
+1. **Fit.** The empirical semivariogram of the base is computed on the lag grid. Each bin enters the fit at its mean pair distance, not its centre, with Cressie (1985) weights N(h) / γ(h)². The first bin is replaced by the exact semivariance of all pairs formed by each unit and its ten nearest neighbours that fall inside it, in eight bins of equal pair count by distance. Random pair sampling resolves short lags poorly, and on irregular supports the first bin can be much wider than the unit spacing (26 km against a median neighbour distance of 3 km for North Carolina tracts). Two earlier versions failed calibration: fitting at bin centres produced a spurious nugget, and a single averaged nearest-neighbour value overestimated short correlation lengths on irregular supports by about 30%. Near-neighbour pairs give every unit equal weight; using all pairs within the bin instead calibrated worse in simulation, because close pairs come mostly from dense areas.
 2. **Model choice.** Gaussian, exponential and spherical models are each fitted with and without a nugget. The six candidates are compared by m log(WRSS / m) + 2p, where WRSS is the weighted residual sum of squares, m the number of lags and p the number of parameters. Every candidate's criterion is reported. On the bundled elevation data a Gaussian model, too smooth for terrain, made the null reject at five or six scales, while the selected exponential model did not.
 3. **Simulation.** Lattices are simulated by circulant embedding. Points and polygons with up to 3,000 units use one Cholesky factor per test; larger sets are simulated on a covering grid and sampled at the nearest cell.
 4. **Parameter uncertainty.** By default each simulation draws a field from the fitted model, refits the same model form to it, and simulates the trajectory from the refitted parameters (a parametric bootstrap). This widens the band by the uncertainty of the fitted parameters. Without it the test is too liberal for rough fields (see Calibration).
-5. **Test.** Variance is tested as the share of base variance retained, and Moran's I as the change from the base, I(s) − I(base). The base scale is in the band by construction. A scale exits when either diagnostic lies more than 2.5 simulation standard deviations from the simulated mean. No multiplicity correction is applied across scales; the calibration below reports the any-scale rate.
+5. **Test.** Variance is tested as the share of base variance retained, and Moran's I as the change from the base, I(s) − I(base). The base scale is in the band by construction. A scale exits the descriptive band when either diagnostic lies more than 2.5 simulation standard deviations from the simulated mean. The formal decision is a simultaneous test across all scales and both diagnostics: the statistic is the largest absolute standardized departure, and its reference distribution is that statistic computed for every simulated trajectory (`result.simultaneous`, level 0.05 by default).
 6. **Prediction.** The analytic share of variance retained, 1 − γ̄(v, v) / γ̄(D, D) from Krige's relation, is reported next to the Monte Carlo mean as a check.
 
 A departure from the band means the trajectory is inconsistent with information loss under a single stationary structure fitted at the base. Possible causes include structure at several scales, non-stationarity, anisotropy and edge effects. The test does not separate these.
 
 ### Calibration
 
-`examples/null_calibration.py` simulates fields that satisfy the null (stationary, isotropic, Gaussian or exponential covariance, no nugget, 96 x 96 cells, blocks of 2 to 16) and records how often the test rejects.
+Two scripts estimate the false-rejection rate and the power of the test. In each run the covariance model is selected from the simulated data and the test uses 100 null simulations, as in practice.
 
-| True model | Any scale | s = 2 | s = 4 | s = 8 | s = 16 |
-|---|---|---|---|---|---|
-| Gaussian (100 fields) | 1% | 0% | 0% | 0% | 1% |
-| Exponential (100 fields) | 2% | 2% | 0% | 0% | 0% |
+`examples/null_calibration.py` uses a regular 96 x 96 lattice aggregated into blocks of 2, 4, 8 and 16 cells, with fields from a stationary Gaussian or exponential covariance and no nugget (100 fields each). `examples/null_calibration_irregular.py` uses the 2,628 North Carolina tract centroids, weighted by population, aggregated to 5, 10, 20 and 40 km grids (cells hold 1 to 242 tracts), with two null scenarios (Gaussian and exponential, length 8 km) and three alternatives.
 
-The covariance model was selected from the data each time: Gaussian in all 100 Gaussian fields, and exponential in 82 and spherical in 18 of the exponential fields. Each test used 60 null simulations. Raw results are in `docs/calibration.csv`.
+| Support | Scenario | Any scale outside 2.5 SD | Simultaneous test, 5% |
+|---|---|---|---|
+| Regular lattice | Null, Gaussian | 1% | 1% |
+| Regular lattice | Null, exponential | 0% | 0% |
+| Tract centroids | Null, Gaussian | 8% | 7% |
+| Tract centroids | Null, exponential | 7% | 7% |
+| Tract centroids | Two scales, 20% of variance at 64 km | 78% | 78% |
+| Tract centroids | Two scales, 10% at 64 km | 50% | 47% |
+| Tract centroids | Linear trend, 10% | 97% | 96% |
 
-With parameters treated as known, the exponential fields were rejected at s = 2 in 24 to 28% of fields, because the first aggregation step depends strongly on the estimated short-range covariance. The parametric bootstrap removes this.
+Raw results are in `docs/calibration.csv` and `docs/calibration_irregular.csv`. With parameters treated as known (an earlier calibration on the lattice), exponential fields were rejected at s = 2 in 24 to 28% of fields; the parametric bootstrap removes this. With a single averaged nearest-neighbour value in place of the short-lag bins, an 8 km Gaussian field on the tract centroids was fitted with a median length of 10.3 km and the test rejected about half of the null fields.
 
 ### Zoning null
 
-For nested supports, each observed support is compared with random zonings of the base into the same number of zones, grown by nearest-seed assignment from randomly chosen base units. These zones approximate contiguous regions but are not guaranteed to be contiguous, and they have roughly equal numbers of base units, while administrative units often do not. A large |z| therefore says the observed boundaries differ from size-matched random partitions in this sense.
+For nested supports, each observed support is compared with random zonings of the base into the same number of zones. By default (`method="size_matched"`) the zones are contiguous and follow the observed distribution of zone sizes: they are grown one at a time from the largest target to the smallest, each from a random unassigned seed, by adding random unassigned neighbours on the queen graph (islands are first linked to their nearest unit). Units left at the end join an adjacent zone, so sizes are matched approximately. The earlier nearest-seed zonings, with zones of roughly equal size, remain available (`method="voronoi"`). The choice matters: North Carolina counties, which range from 1 to 301 tracts, look unusual against equal-size zonings (z = −5.5 for population-weighted variance retained) and typical against size-matched contiguous zonings (z near 0).
 
 ## Inter-scale distortion
 

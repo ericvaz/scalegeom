@@ -31,6 +31,7 @@ def run(n_fields=100, n_sim=60, width=2.5, out=None):
         rng = np.random.default_rng(2026)
         per_scale = np.zeros(len(SCALES) - 1)
         any_exit = 0
+        simultaneous = 0
         chosen = {}
         for k in range(n_fields):
             f = simulate_grid(truth, (96, 96), 1 / 96, rng)
@@ -40,8 +41,10 @@ def run(n_fields=100, n_sim=60, width=2.5, out=None):
             ex = np.array([bool(x) for x in r.table["exits"]])[1:]
             per_scale += ex
             any_exit += ex.any()
+            simultaneous += bool(r.simultaneous.get("rejects"))
         row = {"true_model": model, "fields": n_fields,
                "any_scale_rate": any_exit / n_fields,
+               "simultaneous_rate": simultaneous / n_fields,
                "models_selected": ", ".join(f"{m} {c}" for m, c in sorted(chosen.items()))}
         for s, v in zip(SCALES[1:], per_scale / n_fields):
             row[f"rate_s{s}"] = v
@@ -57,7 +60,7 @@ def run(n_fields=100, n_sim=60, width=2.5, out=None):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--fields", type=int, default=100)
-    ap.add_argument("--n-sim", type=int, default=60)
+    ap.add_argument("--n-sim", type=int, default=100)
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "output", "calibration"))
     a = ap.parse_args()
     t0 = time.time()

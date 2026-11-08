@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scalegeom"
-version = "0.1.0"
+version = "0.2.0"
 description = "Scale-conditioned geometry: diagnostics, change-of-support nulls and representation-space metrics for multiscale spatial analysis"
 readme = "README.md"
 license = {text = "MIT"}

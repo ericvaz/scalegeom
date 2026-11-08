@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## Unreleased (0.2.0)
+
+Changes made after a pre-submission review of the methods. Several change results, so regression values in `tests/benchmarks.json` were updated and are explained here.
+
+- Variance retained is now measured with each representation's measure (`weighted_variance`), the estimand consistent with mass-weighted aggregation: the ratio is the between-unit share of the base variance. Trajectories also report the unweighted ratio (`var_retained_unweighted`), and the nulls take `weighted=False` for the old behaviour. For North Carolina tract income aggregated to counties the share is 0.302 weighted and 0.192 unweighted.
+- The zoning null now compares an observed partition with random contiguous zonings that follow its distribution of zone sizes (`zoning_null(method="size_matched")`, using the new `contiguous_zoning`). The earlier Voronoi null, with zones of roughly equal size, remains as `method="voronoi"`. With equal-size zones, North Carolina counties appear to hide income differences (z = -5.5); against size-matched contiguous zones they are typical (z near 0). A zoning null that ignores zone sizes can mistake a size effect for a boundary effect.
+- Covariance fitting uses the exact semivariance of near-neighbour pairs, in distance-quantile bins, in place of the first lag bin and the single nearest-neighbour anchor. On irregular supports the old fit overestimated short correlation lengths and the test rejected 40 to 55% of fields that satisfied its null; with the new fit the rate is about 5% (`examples/null_calibration_irregular.py`).
+- `information_loss_null` adds a simultaneous test across all scales and both diagnostics (`result.simultaneous`): a maximum-statistic test whose reference distribution comes from the same simulations.
+- `local_moran(..., fdr=True)` declares significance by the Benjamini-Hochberg procedure; `metric_sensitivity` uses it by default and reports cluster agreement both over all units and over significant units only.
+- New tests: weighted variance as the between-zone share, exact aggregation of zone-constant fields, contiguity and size matching of random zonings, the FDR procedure, and the simultaneous test.
+
 
 - Open-data test bank in `scalegeom.datasets`: North Carolina census tracts (ACS 2023, public domain) with tract to county nesting and polygon contiguity, NOAA ETOPO1 elevation for the Blue Ridge, and the simulated scenarios of Vaz (2026). Provenance in `DATASETS.md`; rebuild with `scripts/build_datasets.py`.
 - Known-answer tests in `tests/benchmarks.json`: published values from Vaz (2026), dataset integrity checks, and pinned regression values.

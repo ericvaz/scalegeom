@@ -410,3 +410,150 @@ def voronoi_zoning(base: Representation, n_zones: int, seed: int = 0, label: str
     _, lab = cKDTree(base.coords[seeds]).query(base.coords)
     return aggregate_by_labels(base, lab, float("nan"), "random",
                                label or f"random zoning ({n_zones}) #{seed}")
+
+
+def weighted_variance(values: np.ndarray, mass: np.ndarray | None = None) -> float:
+    """Variance of `values` under the measure `mass` (equal weights if None).
+
+    With mass-weighted means as the aggregation operator, the ratio of the
+    weighted variance of an aggregated representation to that of its base is
+    the between-unit share of the base variance, so it lies in [0, 1]."""
+    v = np.asarray(values, dtype=float)
+    if mass is None:
+        return float(np.var(v))
+    w = np.asarray(mass, dtype=float)
+    w = w / w.sum()
+    m = np.sum(w * v)
+    return float(np.sum(w * (v - m) ** 2))
+
+
+def _contiguity_graph(base: Representation):
+    """Queen contiguity of the base if available, else 4 nearest neighbours;
+    components are bridged to their nearest unit so every unit is reachable."""
+    from scipy import sparse
+    from scipy.sparse.csgraph import connected_components
+    from scipy.spatial import cKDTree
+    A = (base.adjacency or {}).get("queen")
+    if A is None:
+        A = (base.adjacency or {}).get("rook")
+    if A is None:
+        k = min(5, base.n)
+        _, j = cKDTree(base.coords).query(base.coords, k)
+        i = np.repeat(np.arange(base.n), k - 1)
+        A = sparse.csr_matrix((np.ones(len(i)), (i, j[:, 1:].ravel())), shape=(base.n, base.n))
+        A = ((A + A.T) > 0).astype(float)
+    A = sparse.lil_matrix(A)
+    tree_all = None
+    while True:
+        ncomp, comp = connected_components(A.tocsr(), directed=False)
+        if ncomp == 1:
+            return A.tocsr()
+        big = np.argmax(np.bincount(comp))
+        c = next(c for c in range(ncomp) if c != big)
+        inside = np.flatnonzero(comp == c)
+        outside = np.flatnonzero(comp != c)
+        d, j = cKDTree(base.coords[outside]).query(base.coords[inside])
+        i = inside[np.argmin(d)]
+        o = outside[j[np.argmin(d)]]
+        A[i, o] = 1
+        A[o, i] = 1
+
+
+def contiguous_zoning(base: Representation, sizes, seed: int = 0, label: str = "",
+                      graph=None, repair: int = 50) -> Representation:
+    """Random contiguous zoning whose zone sizes (numbers of base units)
+    follow `sizes`.
+
+    Zones are grown one at a time, from the largest target size to the
+    smallest, each from a random unassigned seed by adding random unassigned
+    neighbours on the contiguity graph (queen contiguity if available, else
+    four nearest neighbours; islands are linked to their nearest unit). A zone
+    that runs out of unassigned neighbours stops early, and units left at the
+    end join an adjacent zone. A repair step (up to `repair` passes) then
+    moves boundary units from zones above their target size to adjacent zones
+    below it, keeping every zone contiguous. Sizes are matched closely but not
+    always exactly; robustness.py reports the realized deviations. Used by the
+    size-matched zoning null."""
+    A = graph if graph is not None else _contiguity_graph(base)
+    rng = np.random.default_rng(seed)
+    n = base.n
+    target = np.sort(np.asarray(sizes, dtype=int))[::-1]
+    lab = -np.ones(n, dtype=int)
+    for g, size in enumerate(target):
+        free = np.flatnonzero(lab < 0)
+        if len(free) == 0:
+            break
+        s0 = rng.choice(free)
+        lab[s0] = g
+        size_now = 1
+        frontier = set(A.indices[A.indptr[s0]:A.indptr[s0 + 1]].tolist())
+        while size_now < size:
+            cand = [u for u in frontier if lab[u] < 0]
+            if not cand:
+                break
+            u = cand[rng.integers(len(cand))]
+            lab[u] = g
+            size_now += 1
+            frontier.update(A.indices[A.indptr[u]:A.indptr[u + 1]].tolist())
+    for _ in range(n):
+        left = np.flatnonzero(lab < 0)
+        if len(left) == 0:
+            break
+        for u in left:
+            nb = A.indices[A.indptr[u]:A.indptr[u + 1]]
+            nb = nb[lab[nb] >= 0]
+            if len(nb):
+                lab[u] = lab[rng.choice(nb)]
+    if repair:
+        lab = _repair_sizes(A, lab, target, rng, repair)
+    return aggregate_by_labels(base, lab, float("nan"), "random",
+                               label or f"contiguous random zoning ({len(target)}) #{seed}")
+
+
+def _repair_sizes(A, lab, target, rng, passes):
+    """Move boundary units from zones above their target size to adjacent
+    zones below theirs, one unit at a time, keeping every zone contiguous.
+    Zones are matched to targets by rank of size."""
+    from scipy.sparse.csgraph import connected_components
+    k = len(target)
+    lab = lab.copy()
+
+    def assign_targets():
+        size = np.bincount(lab, minlength=k)
+        order = np.argsort(-size, kind="stable")
+        t = np.empty(k, dtype=int)
+        t[order] = target
+        return size, t
+
+    def stays_connected(g, u):
+        idx = np.flatnonzero(lab == g)
+        idx = idx[idx != u]
+        if len(idx) <= 1:
+            return len(idx) == 1
+        return connected_components(A[idx][:, idx], directed=False)[0] == 1
+
+    for _ in range(int(passes)):
+        size, t = assign_targets()
+        over = np.flatnonzero(size > t)
+        if len(over) == 0:
+            break
+        moved = False
+        for g in rng.permutation(over):
+            members = np.flatnonzero(lab == g)
+            rng.shuffle(members)
+            for u in members:
+                if size[g] <= t[g]:
+                    break
+                nb = A.indices[A.indptr[u]:A.indptr[u + 1]]
+                cand = np.unique(lab[nb])
+                cand = cand[(cand != g) & (size[cand] < t[cand])]
+                if len(cand) == 0 or not stays_connected(g, u):
+                    continue
+                h = cand[np.argmax(t[cand] - size[cand])]
+                lab[u] = h
+                size[g] -= 1
+                size[h] += 1
+                moved = True
+        if not moved:
+            break
+    return lab

@@ -20,6 +20,7 @@ from . import __version__
 from .diagnostics import (DEFAULT_LAG_EDGES, correlation_profile, local_moran, morans_i,
                           range_proxy, sample_pairs, semivariogram)
 from .metrics import describe, induced_adjacency
+from .representation import weighted_variance
 from .report import Report
 from .table import Table
 
@@ -81,9 +82,11 @@ class ScaleProtocol:
         if not zoning:
             self.profiles[rep.label] = {"centers": g["centers"], "gamma": g["gamma"], "rho": c["rho"],
                                         "counts": g["counts"]}
-        v0 = np.var(f.base.values)
+        v0 = weighted_variance(f.base.values, f.base.mass)
+        u0 = np.var(f.base.values)
         row = {"label": rep.label, "s": rep.s, "zoning": bool(zoning), "units": rep.n,
-               "var_retained": float(np.var(rep.values) / v0) if v0 > 0 else np.nan,
+               "var_retained": weighted_variance(rep.values, rep.mass) / v0 if v0 > 0 else np.nan,
+               "var_retained_unweighted": float(np.var(rep.values) / u0) if u0 > 0 else np.nan,
                "moran_I": m.I, "moran_p": m.p_sim,
                "gamma_h": float(g["gamma"][self.gamma_bin]) if self.gamma_bin < len(g["gamma"]) else np.nan,
                "range_proxy": range_proxy(c["centers"], c["rho"], self.tau)}
@@ -124,7 +127,7 @@ class ScaleProtocol:
             out["covariance"] = information_loss_null(self.family, self.metric, model, n_sim, width, seed)
             self.results["null"] = out["covariance"]
         if kind == "zoning" or (kind == "auto" and self.family.kind == "nested"):
-            out["zoning"] = zoning_null(self.family, self.metric, min(n_sim, 30), width, seed + 3000)
+            out["zoning"] = zoning_null(self.family, self.metric, n_sim, width, seed + 3000)
             self.results["zoning_null"] = out["zoning"]
         return out
 
@@ -207,28 +210,35 @@ class ScaleProtocol:
 
 def metric_sensitivity(rep, metrics=("queen", "knn:6", "hops:2"), family=None, permutations: int = 999,
                        alpha: float = 0.05, seed: int = 0, figures: bool = True,
-                       title: str = "Induced-metric sensitivity") -> Report:
+                       title: str = "Induced-metric sensitivity", fdr: bool = True) -> Report:
     """Global and local Moran's I for one support under several induced
     metrics (Vaz 2026, Section 9.9). Reports how global dependence, the
     number of significant local clusters, and cluster membership change."""
     results = {}
     t = Table(title="Global and local dependence under alternative induced metrics",
-              note=f"{permutations} permutations; local clusters at p <= {alpha:g}.")
+              note=f"{permutations} permutations; local clusters "
+                   + (f"at false discovery rate {alpha:g} (Benjamini-Hochberg)." if fdr else f"at p <= {alpha:g}."))
     for k, spec in enumerate(metrics):
         A = induced_adjacency(rep, spec, family)
         g = morans_i(rep.values, A, permutations, seed + k)
-        loc = local_moran(rep.values, A, permutations, alpha, seed + 100 + k)
+        loc = local_moran(rep.values, A, permutations, alpha, seed + 100 + k, fdr=fdr)
         results[spec] = {"name": describe(spec), "I": g.I, "p": g.p_sim, "local": loc,
                          "mean_neighbours": float(A.sum() / rep.n)}
         cnt = loc.counts()
         t.append({"metric": describe(spec), "spec": spec, "mean_neighbours": A.sum() / rep.n, "moran_I": g.I,
                   "p_sim": g.p_sim, "significant_units": loc.n_significant,
                   "HH": cnt["High-High"], "LL": cnt["Low-Low"], "LH": cnt["Low-High"], "HL": cnt["High-Low"]})
-    agree = Table(title="Agreement of local cluster labels between metrics (share of units with the same label)")
+    agree = Table(title="Agreement of local cluster labels between metrics",
+                  note="'all units': share of all units with the same label, including units not significant "
+                       "under either metric. 'significant units': the same share among units significant "
+                       "under at least one of the two metrics.")
     for a in metrics:
         row = {"metric": a}
         for b in metrics:
-            row[b] = float(np.mean(results[a]["local"].cluster == results[b]["local"].cluster))
+            ca, cb = results[a]["local"].cluster, results[b]["local"].cluster
+            sig = (ca > 0) | (cb > 0)
+            row[f"{b} (all units)"] = float(np.mean(ca == cb))
+            row[f"{b} (significant units)"] = float(np.mean(ca[sig] == cb[sig])) if sig.any() else np.nan
         agree.append(row)
     report = Report(title)
     report.meta.update({"scalegeom_version": __version__, "units": rep.n, "permutations": permutations,

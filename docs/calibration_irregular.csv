@@ -1,0 +1,6 @@
+scenario,fields,any_scale_2.5sd,simultaneous_5pct,rate_5km,rate_10km,rate_20km,rate_40km,models_selected
+"null, Gaussian",100,0.08,0.07,0.03,0.03,0.02,0.02,gaussian 100
+"null, exponential",100,0.07,0.07,0.04,0.05,0.03,0.04,"exponential 92, spherical 8"
+"two scales, 20%",100,0.78,0.78,0.08,0.21,0.67,0.66,"exponential 3, gaussian 95, spherical 2"
+"two scales, 10%",100,0.5,0.47,0.05,0.08,0.34,0.38,gaussian 100
+"trend, 10%",100,0.97,0.96,0.06,0.23,0.82,0.95,gaussian 100

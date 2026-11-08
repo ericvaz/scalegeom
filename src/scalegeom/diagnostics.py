@@ -87,12 +87,34 @@ class LocalMoranResult:
         return int(np.sum(self.cluster > 0))
 
 
+def fdr_significant(p: np.ndarray, q: float = 0.05) -> np.ndarray:
+    """Benjamini-Hochberg: True where p is significant at false discovery rate q."""
+    p = np.asarray(p, dtype=float)
+    ok = np.isfinite(p)
+    out = np.zeros(len(p), dtype=bool)
+    pv = p[ok]
+    n = len(pv)
+    if n == 0:
+        return out
+    order = np.argsort(pv)
+    passed = pv[order] <= q * np.arange(1, n + 1) / n
+    if passed.any():
+        k = np.max(np.flatnonzero(passed)) + 1
+        idx = np.flatnonzero(ok)[order[:k]]
+        out[idx] = True
+    return out
+
+
 def local_moran(y: np.ndarray, A: sparse.spmatrix, permutations: int = 999,
-                alpha: float = 0.05, seed=None) -> LocalMoranResult:
+                alpha: float = 0.05, seed=None, fdr: bool = False) -> LocalMoranResult:
     """Local Moran's I with conditional permutation inference.
 
     As in esda, one set of random draws is shared by all units and the
-    focal unit is excluded from its own reference distribution."""
+    focal unit is excluded from its own reference distribution. With
+    fdr=True, units are declared significant by the Benjamini-Hochberg
+    procedure at false discovery rate alpha, which controls the share of
+    false positives among the many local tests; otherwise each unit is
+    tested at level alpha."""
     y = np.asarray(y, dtype=float)
     n = len(y)
     W = row_standardize(A).tocsr()
@@ -125,7 +147,8 @@ def local_moran(y: np.ndarray, A: sparse.spmatrix, permutations: int = 999,
                 if permutations - larger < larger:
                     larger = permutations - larger
                 p[i] = (larger + 1.0) / (permutations + 1.0)
-    cluster = np.where(p <= alpha, quad, 0)
+    sig = fdr_significant(p, alpha) if fdr else (p <= alpha)
+    cluster = np.where(sig, quad, 0)
     return LocalMoranResult(Is, p, quad, cluster)
 
 

@@ -8,3 +8,5 @@ examples/output/
 .data_cache/
 review/
 paper/*.docx
+paper_tgis/*.docx
+.DS_Store
