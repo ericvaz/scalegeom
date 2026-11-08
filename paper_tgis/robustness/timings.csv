@@ -1,0 +1,9 @@
+case,stage,seconds,peak_memory_mb
+"Elevation, blocks",fit,0.4,110
+"Elevation, blocks","change-of-support null, 100 sims",6.9,271
+"Elevation, blocks",FGW along the path,6.2,793
+"Income, grids",fit,0.1,118
+"Income, grids","change-of-support null, 100 sims",19.2,438
+"Income, counties","zoning null, 100 size-matched zonings",6.5,78
+"Broadband, tracts","local Moran, 3 rules, 999 permutations",0.6,119
+hardware,Apple M3 Pro; Darwin 27.0.0; Python 3.12.12; single process,,

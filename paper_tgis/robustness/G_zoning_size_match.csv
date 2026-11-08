@@ -1,0 +1,2 @@
+zonings,zones_per_zoning_min,zones_per_zoning_max,abs_dev_median,abs_dev_p95,abs_dev_max,share_exact,share_within_2
+200,100,100,0.0,2.0,61,0.7055499999999999,0.96835

@@ -1,0 +1,5 @@
+variable,group,tracts,mean_nn_distance_km,nn_semivariance
+median_income,dense half,1314,1.82584347019404,0.4664710455945259
+median_income,sparse half,1314,6.383413420194533,0.24095612932276195
+pct_broadband,dense half,1322,1.8221354659372735,0.5075288050114692
+pct_broadband,sparse half,1321,6.3729181013665075,0.5751687911267547
