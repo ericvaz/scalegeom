@@ -12,3 +12,5 @@ paper_tgis/*.docx
 .DS_Store
 paper_tgis/manuscript.md
 paper_tgis/figures/
+paper_tgis/titlepage.md
+submission_tgis/
