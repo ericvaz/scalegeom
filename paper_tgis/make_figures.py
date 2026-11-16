@@ -72,7 +72,7 @@ def workflow():
         (1, "Family of\nrepresentations", "S(θ), θ = (s, ζ)\nmembership of each\nbase unit recorded"),
         (21, "Induced\nmetrics", "knn:k, band:r,\nqueen, rook,\nhops:h, matrix:k"),
         (41, "Diagnostics on\none lag grid", "variance retained,\nMoran's I, LISA,\nsemivariogram, range"),
-        (61, "Null models", "change of support\n(fitted at base),\nsize-matched zonings"),
+        (61, "Null models", "change of support,\nwith a variance surface,\nsize-matched zonings"),
         (81, "Distortion and\ndistance", "matched-pair\nconstants,\nFGW between supports"),
     ]
     for x, head, body in boxes:
@@ -168,6 +168,111 @@ def semivariogram_figure():
 
 
 # ------------------------------------------------------------------ Figure 5
+def surface_figure():
+    """The variance-surface null for tract income on grids: semivariance of
+    near-neighbour pairs by density class before and after dividing by the
+    fitted local SD, variance retained under both nulls, and the test
+    statistic for placebo covariates."""
+    from scalegeom.diagnostics import DEFAULT_LAG_EDGES
+    from scalegeom.null import _near_neighbour_pairs
+    RB = os.path.join(HERE, "robustness")
+    fam = D.nc_tracts_grid_family("median_income", zoning=None)
+    b = fam.base
+    x = np.log(b.attributes["pop"] / b.attributes["area_km2"])
+    surf = sg.fit_variance_surface(fam, x, name="log population density")
+    xy = fam.normalized(b)
+    km = fam.extent / 1000.0
+    a, c2, d = _near_neighbour_pairs(xy, float(DEFAULT_LAG_EDGES[1]))
+    cm = 0.5 * (surf.covariate[a] + surf.covariate[c2])
+    cls = np.digitize(cm, np.quantile(cm, [1 / 3, 2 / 3]))
+    q = np.quantile(d, np.linspace(0, 1, 9))
+    q[-1] += 1e-12
+    di = np.clip(np.searchsorted(q, d, side="right") - 1, 0, 7)
+    z = (b.values - b.values.mean()) / b.values.std()
+    r = surf.rescale(b.values, b.mass)
+    r = (r - r.mean()) / r.std()
+    fig = Figure(figsize=(7.2, 5.6))
+    axes = fig.subplots(2, 2)
+    names = {2: "Densest third", 1: "Middle third", 0: "Sparsest third"}
+    colours = {2: ALERT, 1: MUTED, 0: "#2166ac"}
+    for ax, vals, ttl in ((axes[0, 0], z, "(a) Income, standardized"),
+                          (axes[0, 1], r, "(b) Income divided by the fitted local SD")):
+        style(ax)
+        g = 0.5 * (vals[a] - vals[c2]) ** 2
+        for k in (2, 1, 0):
+            hs, gs = [], []
+            for j in range(8):
+                m = (cls == k) & (di == j)
+                if m.sum() >= 30:
+                    hs.append(d[m].mean() * km)
+                    gs.append(g[m].mean())
+            ax.plot(hs, gs, color=colours[k], lw=1.2, marker="o", ms=3.5, label=names[k])
+        ax.set_xscale("log")
+        from matplotlib.ticker import NullFormatter, NullLocator
+        ax.set_xticks([2, 5, 10, 20])
+        ax.set_xticklabels(["2", "5", "10", "20"])
+        ax.xaxis.set_minor_locator(NullLocator())
+        ax.xaxis.set_minor_formatter(NullFormatter())
+        ax.set_xlabel("Distance between neighbouring tracts (km, log scale)", fontsize=8, color=INK)
+        ax.set_ylabel("Semivariance", fontsize=8.5, color=INK)
+        ax.set_title(ttl, fontsize=9, color=INK, loc="left")
+    axes[0, 0].legend(frameon=False, fontsize=7.5, title="Pairs by population density", title_fontsize=7.5)
+    ylim = (0, max(axes[0, 0].get_ylim()[1], axes[0, 1].get_ylim()[1]))
+    axes[0, 0].set_ylim(ylim)
+    axes[0, 1].set_ylim(ylim)
+
+    rows = read_csv(os.path.join(RB, "H_surface_nulls.csv"))
+    pick = {r_["null"]: r_ for r_ in rows if r_["case"] == "Tract income, 4 grids" and r_["model_request"] == "auto"}
+    ax = axes[1, 0]
+    style(ax)
+    cells = np.array([5, 10, 20, 40.0])
+    obs = np.array([float(v) for v in str(pick["stationary"]["var_observed"]).split(";")])
+    for kind, col, lab, off in (("stationary", BAND, "Stationary null", -0.6), ("surface", "#9ecae1", "Variance-surface null", 0.6)):
+        mu = np.array([float(v) for v in str(pick[kind]["var_null_mean"]).split(";")])
+        sd = np.array([float(v) for v in str(pick[kind]["var_null_sd"]).split(";")])
+        ax.fill_between(cells, mu - 2.5 * sd, mu + 2.5 * sd, color=col, alpha=0.6, lw=0,
+                        label=f"{lab} (±2.5 SD), p = {pick[kind]['p']:.2f}")
+        ax.plot(cells, mu, color=col if kind == "surface" else MUTED, lw=1, ls="--")
+    ax.plot(cells, obs, color=INK, lw=1.2, marker="o", ms=4, label="Observed", zorder=4)
+    ax.set_xscale("log")
+    ax.set_xticks(cells)
+    ax.set_xticklabels([f"{v:g}" for v in cells])
+    from matplotlib.ticker import NullFormatter, NullLocator
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.xaxis.set_minor_formatter(NullFormatter())
+    ax.set_xlabel("Grid cell (km)", fontsize=8.5, color=INK)
+    ax.set_ylabel("Variance retained", fontsize=8.5, color=INK)
+    ax.set_title("(c) Variance retained under the two nulls", fontsize=9, color=INK, loc="left")
+    ax.legend(frameon=False, fontsize=7, loc="lower left")
+
+    ax = axes[1, 1]
+    style(ax)
+    pl = read_csv(os.path.join(RB, "H_placebos.csv"))
+    rnd = np.array([p_["statistic"] for p_ in pl if p_["covariate"] == "random surface"])
+    ax.hist(rnd, bins=np.arange(0.75, 4.01, 0.25), color=BAND, edgecolor="white", label="Random surfaces")
+    named = {p_["covariate"]: p_ for p_ in pl if p_["covariate"] != "random surface"}
+    crit = float(np.median([r_["critical"] for r_ in rows if r_["case"] == "Tract income, 4 grids" and r_["null"] == "surface"]))
+    ax.axvline(crit, color=MUTED, lw=0.8, ls=":")
+    ax.text(crit + 0.04, ax.get_ylim()[1] * 0.35, "5% critical value", fontsize=6.5, color=MUTED, rotation=90, va="bottom")
+    marks = [("log population density", ALERT, "Log population density"), ("easting", INK, "Easting"),
+             ("northing", "#2166ac", "Northing")]
+    top = ax.get_ylim()[1]
+    for i, (key, col, lab) in enumerate(marks):
+        if key in named:
+            ax.axvline(named[key]["statistic"], color=col, lw=1.4, ymax=0.6 - 0.08 * i, label=lab)
+    ax.set_ylim(0, top)
+    ax.set_xlabel("Largest standardized departure", fontsize=8.5, color=INK)
+    ax.set_ylabel("Number of random surfaces", fontsize=8.5, color=INK)
+    ax.set_title("(d) Test statistic by covariate", fontsize=9, color=INK, loc="left")
+    ax.set_ylim(0, top * 1.45)
+    ax.legend(frameon=False, fontsize=7, loc="upper left")
+    fig.tight_layout()
+    save(fig, "fig5_surface.png")
+    return {"slope": surf.slope, "sd_ratio": surf.sd_ratio(), "random_p_gt_05": float(np.mean(
+        [p_["p"] > 0.05 for p_ in pl if p_["covariate"] == "random surface"]))}
+
+
+# ------------------------------------------------------------------ Figure 6
 def counties(n_zonings, seed=3000):
     from scalegeom.representation import _contiguity_graph
     fam = D.nc_tracts_family("median_income")
@@ -231,11 +336,11 @@ def counties(n_zonings, seed=3000):
     ax.legend(frameon=False, fontsize=7.5, loc="upper right")
     ax.set_title(f"(c) Counties against {n_zonings} random zonings of each kind", fontsize=9, color=INK, loc="left")
     fig.subplots_adjust(left=0.08, right=0.98, top=0.96, bottom=0.10, hspace=0.75, wspace=0.05)
-    save(fig, "fig5_counties.png")
+    save(fig, "fig6_counties.png")
     return {"observed": float(observed), **stats}
 
 
-# ------------------------------------------------------------------ Figure 6
+# ------------------------------------------------------------------ Figure 7
 def lisa_maps(permutations=999, seed=0):
     rep = D.nc_tracts("pct_broadband")
     g = D.nc_tracts_geometry().to_crs(32119)
@@ -264,7 +369,7 @@ def lisa_maps(permutations=999, seed=0):
     fig.legend([Patch(color=LISA[c]) for c in (1, 3, 2, 4, 0)], [LISA_NAMES[c] for c in (1, 3, 2, 4, 0)],
                loc="lower center", ncol=5, frameon=False, fontsize=7.5)
     fig.subplots_adjust(left=0.01, right=0.99, top=0.80, bottom=0.13, wspace=0.05)
-    save(fig, "fig6_broadband_lisa.png")
+    save(fig, "fig7_broadband_lisa.png")
     c = [stats[s] for s in ("knn:6", "queen", "hops:2")]
     sig = (c[0] > 0) | (c[1] > 0) | (c[2] > 0)
     same = (c[0] == c[1]) & (c[1] == c[2])
@@ -277,10 +382,10 @@ def lisa_maps(permutations=999, seed=0):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--n-zonings", type=int, default=200)
-    ap.add_argument("--only", default="123456")
+    ap.add_argument("--only", default="1234567")
     a = ap.parse_args()
     os.makedirs(OUT, exist_ok=True)
-    for old in ("fig4_counties.png", "fig5_broadband_lisa.png"):
+    for old in ("fig4_counties.png", "fig5_broadband_lisa.png", "fig5_counties.png", "fig6_broadband_lisa.png"):
         if os.path.exists(os.path.join(OUT, old)):
             os.remove(os.path.join(OUT, old))
     if "1" in a.only:
@@ -292,6 +397,8 @@ if __name__ == "__main__":
     if "4" in a.only:
         print("semivariogram:", semivariogram_figure())
     if "5" in a.only:
-        print("counties:", counties(a.n_zonings))
+        print("surface:", surface_figure())
     if "6" in a.only:
+        print("counties:", counties(a.n_zonings))
+    if "7" in a.only:
         print("lisa:", lisa_maps())

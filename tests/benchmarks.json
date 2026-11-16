@@ -81,6 +81,13 @@
       "value": 0.3024,
       "tolerance": 0.0005,
       "note": "population-weighted variance (between-county share), the default since 0.2.0"
+    },
+    "nc_income_grid_surface_null": {
+      "slope": 0.2924,
+      "slope_tolerance": 0.0005,
+      "max_exits": 0,
+      "n_sim": 60,
+      "note": "added in 0.3.0: change-of-support null with a variance surface in log population density"
     }
   }
 }

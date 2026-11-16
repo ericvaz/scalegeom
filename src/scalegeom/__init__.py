@@ -6,7 +6,7 @@ The package provides scale-indexed families of representations, induced metrics,
 diagnostic trajectories, the change-of-support null, inter-scale distortion
 checks, and the Fused Gromov-Wasserstein representation space.
 """
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .representation import (Family, Representation, aggregate_by_labels, from_points, from_raster,
                              grid_family, nested_family, raster_family, voronoi_zoning,
@@ -14,7 +14,8 @@ from .representation import (Family, Representation, aggregate_by_labels, from_p
 from .metrics import induced_adjacency, row_standardize
 from .diagnostics import (correlation_profile, local_moran, morans_i, range_proxy, semivariogram)
 from .simulate import CovModel, gaussian_random_field, mixed_scale_field
-from .null import fit_covariance, information_loss_null, regularization_prediction, zoning_null
+from .null import (VarianceSurface, fit_covariance, fit_variance_surface, information_loss_null,
+                   regularization_prediction, variance_surface_test, zoning_null)
 from .space import bilipschitz, fgw_distance, representation_space
 from .protocol import ScaleProtocol, metric_sensitivity
 from .report import Report
@@ -26,6 +27,7 @@ __all__ = [
     "nested_family", "raster_family", "voronoi_zoning", "contiguous_zoning", "weighted_variance", "induced_adjacency", "row_standardize",
     "correlation_profile", "local_moran", "morans_i", "range_proxy", "semivariogram", "CovModel",
     "gaussian_random_field", "mixed_scale_field", "fit_covariance", "information_loss_null",
-    "regularization_prediction", "zoning_null", "bilipschitz", "fgw_distance", "representation_space",
+    "regularization_prediction", "zoning_null", "VarianceSurface", "fit_variance_surface",
+    "variance_surface_test", "bilipschitz", "fgw_distance", "representation_space",
     "ScaleProtocol", "metric_sensitivity", "Report", "Table", "citation",
 ]

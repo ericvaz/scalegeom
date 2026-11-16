@@ -271,3 +271,53 @@ def test_simultaneous_test_is_reported():
     s = r.simultaneous
     assert s["critical"] > 0 and 0 < s["p"] <= 1
     assert s["rejects"] == (s["statistic"] > s["critical"])
+
+
+# ---------------------------------------------------------------- variance surface (0.3.0)
+
+def _surface_points(b, seed, n=1200, length=4.0):
+    from scalegeom.simulate import CovModel, point_simulator
+    rng = np.random.default_rng(seed)
+    # denser on the left, as cities are denser than the countryside
+    xy = np.column_stack([100 * rng.beta(1.0, 2.0, n), rng.uniform(0, 100, n)])
+    cov = np.log(1.0 / (1.0 + xy[:, 0]))
+    c = (cov - cov.mean()) / cov.std()
+    y = point_simulator(CovModel("gaussian", 1.0, length), xy)(rng)
+    vals = 50 + np.exp(b * c) * y
+    return sg.from_points(xy, vals), cov
+
+
+def test_variance_surface_recovers_slope():
+    est = []
+    for s in range(4):
+        base, cov = _surface_points(0.4, s)
+        fam = sg.grid_family(base, [10, 20], zoning=None)
+        est.append(sg.fit_variance_surface(fam, cov).slope)
+    assert np.mean(est) == pytest.approx(0.4, abs=0.06)
+    base, cov = _surface_points(0.0, 9)
+    fam = sg.grid_family(base, [10, 20], zoning=None)
+    assert abs(sg.fit_variance_surface(fam, cov).slope) < 0.08
+
+
+def test_surface_with_zero_slope_is_the_stationary_null():
+    base, cov = _surface_points(0.0, 1)
+    fam = sg.grid_family(base, [10, 20], zoning=None)
+    flat = sg.fit_variance_surface(fam, cov)
+    flat = sg.VarianceSurface(0.0, np.ones(base.n), flat.covariate, "flat", flat.raw)
+    m = sg.fit_covariance(fam, "gaussian")
+    a = sg.information_loss_null(fam, "knn:6", m, n_sim=20, seed=2, uncertainty=False)
+    b = sg.information_loss_null(fam, "knn:6", m, n_sim=20, seed=2, uncertainty=False, covariate=flat)
+    assert np.allclose(a.table["var_null_mean"], b.table["var_null_mean"])
+    assert np.allclose(a.table["var_predicted"], b.table["var_predicted"])
+
+
+def test_surface_prediction_tracks_monte_carlo_and_test_detects_slope():
+    base, cov = _surface_points(0.5, 3)
+    fam = sg.grid_family(base, [10, 20], zoning=None)
+    r = sg.information_loss_null(fam, "knn:6", "gaussian", n_sim=40, seed=1, covariate=cov)
+    pred = np.array(r.table["var_predicted"])
+    mc = np.array(r.table["var_null_mean"])
+    assert np.max(np.abs(pred - mc)) < 0.03
+    assert r.surface.slope > 0.3 and "slope" in r.sims
+    t = sg.variance_surface_test(fam, cov, "gaussian", n_sim=40, seed=0)
+    assert t["p"] < 0.05 and abs(t["null_mean"]) < 0.05

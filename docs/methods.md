@@ -60,6 +60,35 @@ Two scripts estimate the false-rejection rate and the power of the test. In each
 
 Raw results are in `docs/calibration.csv` and `docs/calibration_irregular.csv`. With parameters treated as known (an earlier calibration on the lattice), exponential fields were rejected at s = 2 in 24 to 28% of fields; the parametric bootstrap removes this. With a single averaged nearest-neighbour value in place of the short-lag bins, an 8 km Gaussian field on the tract centroids was fitted with a median length of 10.3 km and the test rejected about half of the null fields.
 
+### Change-of-support null with a variance surface
+
+A departure from the stationary null has several possible causes. On census geographies one of them can be tested directly: units are drawn to hold similar populations, so they are small where people live close together, and a variable whose local variability changes with settlement density will be most variable in the units that population-weighted aggregation averages together most often. `information_loss_null(..., covariate=x)` runs the null under the model
+
+    Z(x) = mu + sigma(x) Y(x),   log sigma(x) = a + b c(x),
+
+where Y is stationary (the covariance models above) and c is the covariate standardized over the base units. With b = 0 this is the stationary null, so the two nulls are nested.
+
+1. **Surface.** `fit_variance_surface` estimates b from the near-neighbour pairs of the short-lag fit. Under the model the semivariance of a pair is T (s_i − s_j)² / 2 + s_i s_j γ_Y(h), with s = exp(b c). Pairs are grouped into 12 distance bins of equal count and, within each, 5 classes by the mean covariate of the pair. For a given b, T is fixed by the standardization, γ_Y takes a free value in each distance bin, and the group means are fitted by least squares with weights N / γ²; b minimizes the weighted residual sum of squares. The free value per distance bin means that b compares pairs at the same separation, which matters on irregular supports, where close pairs come mostly from dense areas.
+2. **Covariance.** The covariance of Y is selected and fitted as above, on the centred values divided by the fitted sigma.
+3. **Simulation and bootstrap.** Simulated fields are multiplied by sigma before aggregation. Each bootstrap simulation re-estimates both b and the covariance, so the band includes the uncertainty of the surface.
+4. **Prediction.** Krige's relation with measure-weighted mean semivariances, γ_ij = T (s_i² + s_j²) / 2 − s_i s_j C_Y(h_ij), gives the expected share of weighted variance retained under the surface (`regularization_prediction(..., scale=...)`).
+5. **Is there a surface at all?** `variance_surface_test` compares the fitted b with its distribution on fields simulated from the stationary null.
+
+The variance-surface null tests a named explanation, so its specificity should be checked: a surface adds a parameter and widens the band, and a band can absorb a departure for that reason alone. `paper_tgis/robustness.py` (section P) repeats the null with placebo covariates, the coordinates and random surfaces with the covariance of the real covariate. `examples/surface_calibration.py` estimates the size and power of both nulls on the tract support when a variance surface is present.
+
+On the tract support (100 fields per scenario, 100 null simulations, covariance model selected from the data, covariate the standardized log population density, Y with length 8 km), the simultaneous test at 5% rejected:
+
+| Scenario | True b | Mean fitted b (SD) | Stationary null | Variance-surface null |
+|---|---|---|---|---|
+| Surface, Gaussian | 0.30 | 0.28 (0.04) | 100% | 3% |
+| Surface, exponential | 0.30 | 0.29 (0.03) | 100% | 11% |
+| Weaker surface, Gaussian | 0.15 | 0.14 (0.04) | 45% | 3% |
+| Stationary, Gaussian | 0 | -0.02 (0.04) | 9% | 10% |
+| Surface and two scales, 20% at 64 km | 0.30 | 0.28 (0.03) | 98% | 96% |
+| Surface and linear trend, 10% | 0.30 | 0.28 (0.03) | 99% | 100% |
+
+Over the four null scenarios the variance-surface test rejected 27 of 400 fields (6.8%). A stationary null rejects almost every field with a density-linked surface of this strength, and usually selects the wrong covariance form as well. Raw results are in `docs/calibration_surface.csv` and `docs/calibration_surface_raw.csv`.
+
 ### Zoning null
 
 For nested supports, each observed support is compared with random zonings of the base into the same number of zones. By default (`method="size_matched"`) the zones are contiguous and follow the observed distribution of zone sizes: they are grown one at a time from the largest target to the smallest, each from a random unassigned seed, by adding random unassigned neighbours on the queen graph (islands are first linked to their nearest unit). Units left at the end join an adjacent zone, so sizes are matched approximately. The earlier nearest-seed zonings, with zones of roughly equal size, remain available (`method="voronoi"`). The choice matters: North Carolina counties, which range from 1 to 301 tracts, look unusual against equal-size zonings (z = −5.5 for population-weighted variance retained) and typical against size-matched contiguous zonings (z near 0).

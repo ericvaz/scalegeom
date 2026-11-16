@@ -10,12 +10,23 @@ Responds to points raised in pre-submission review:
      regional trend
   D  local clusters of broadband with false discovery rate control, and
      agreement measured on significant tracts only
+  E, F, G  local variability in dense and sparse areas, at equal distances,
+     and how closely the random zonings match the counties' tract counts
+  H  the variance-surface null (added in revision): the slope of local
+     variability on log population density, tested against the stationary
+     null; the change-of-support test with that surface for every income
+     family and for broadband; other proxies for settlement density; and
+     placebo covariates with no link to settlement
 Writes CSV tables to paper_tgis/robustness/.
 """
 import argparse
 import csv
 import os
 import time
+
+if __name__ == "__main__":
+    for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+        os.environ.setdefault(_v, "1")
 
 import numpy as np
 from scipy import sparse
@@ -344,6 +355,106 @@ def zoning_size_match(n_zonings=200, seed=3000):
     return rows
 
 
+# ------------------------------------------------------------------ H
+def log_density(base):
+    a = base.attributes
+    return np.log(a["pop"] / a["area_km2"])
+
+
+def surface_families():
+    inc = D.nc_tracts("median_income")
+    log_inc = inc.with_values(np.log(inc.values))
+    log_inc.attributes = inc.attributes
+    bb = D.nc_tracts("pct_broadband")
+    cells = [5000.0, 10000.0, 20000.0, 40000.0]
+    return [("Tract income, 4 grids", grid_family(inc, cells, zoning=None), "knn:6"),
+            ("Log tract income, 4 grids", grid_family(log_inc, cells, zoning=None), "knn:6"),
+            ("Tract income, counties", D.nc_tracts_family("median_income"), "queen"),
+            ("Broadband, 4 grids", grid_family(bb, cells, zoning=None), "knn:6")]
+
+
+def surface_nulls(n_sim, seed=0, n_slope=200):
+    """Slope test and change-of-support tests with and without the surface,
+    under each covariance model for income on grids."""
+    slopes, rows = [], []
+    for label, fam, metric in surface_families():
+        x = log_density(fam.base)
+        st = sg.variance_surface_test(fam, x, "auto", n_sim=n_slope, seed=seed, name="log population density")
+        slopes.append({"case": label, "slope": st["slope"], "sd_ratio_10_90": st["sd_ratio_10_90"],
+                       "null_mean": st["null_mean"], "null_sd": st["null_sd"], "p": st["p"], "n_sim": n_slope})
+        models = ("auto", "gaussian", "exponential", "spherical") if label == "Tract income, 4 grids" else ("auto",)
+        for m in models:
+            for kind in ("stationary", "surface"):
+                t0 = time.time()
+                r = sg.information_loss_null(fam, metric, m, n_sim=n_sim, seed=seed,
+                                             covariate=st["surface"] if kind == "surface" else None)
+                tab = r.table.rows
+                rows.append({"case": label, "null": kind, "model_request": m, "model": r.model.model,
+                             "nugget": r.model.nugget, "length": r.model.length,
+                             "slope": r.surface.slope if r.surface else 0.0,
+                             "slope_boot_sd": float(np.nanstd(r.sims["slope"], ddof=1)) if r.surface else "",
+                             "exits": r.exits, "of": len(fam.path) - 1,
+                             "p": r.simultaneous["p"], "statistic": r.simultaneous["statistic"],
+                             "critical": r.simultaneous["critical"],
+                             "var_observed": ";".join(f"{v:.3f}" for v in [x["var_observed"] for x in tab][1:]),
+                             "var_null_mean": ";".join(f"{v:.3f}" for v in [x["var_null_mean"] for x in tab][1:]),
+                             "var_null_sd": ";".join(f"{v:.3f}" for v in [x["var_null_sd"] for x in tab][1:]),
+                             "var_predicted": ";".join(f"{v:.3f}" for v in [x["var_predicted"] for x in tab][1:]),
+                             "z_var": ";".join(f"{v:.2f}" for v in [x["z_var"] for x in tab][1:]),
+                             "z_moran": ";".join(f"{v:.2f}" for v in [x["z_moran"] for x in tab][1:]),
+                             "seconds": time.time() - t0})
+                print(f"  {label}, {kind}, {m}: {r.exits} exits, p = {r.simultaneous['p']:.2f}")
+    write("H_surface_slopes.csv", slopes)
+    write("H_surface_nulls.csv", rows)
+    return slopes, rows
+
+
+def _placebo_job(args):
+    name, k, n_sim = args
+    from scalegeom.simulate import CovModel, point_simulator
+    fam = grid_family(D.nc_tracts("median_income"), [5000.0, 10000.0, 20000.0, 40000.0], zoning=None)
+    base = fam.base
+    xy = fam.normalized(base)
+    a = base.attributes
+    if name == "log population density":
+        x = log_density(base)
+    elif name == "log tract area":
+        x = np.log(a["area_km2"])
+    elif name == "log distance to nearest tract":
+        from scipy.spatial import cKDTree
+        x = np.log(cKDTree(base.coords).query(base.coords, 2)[0][:, 1])
+    elif name == "easting":
+        x = base.coords[:, 0].copy()
+    elif name == "northing":
+        x = base.coords[:, 1].copy()
+    else:  # a random surface with the spatial covariance of log population density
+        dfam = sg.grid_family(base.with_values(log_density(base)), [5000.0], zoning=None)
+        m = sg.fit_covariance(dfam, "auto")
+        x = point_simulator(m, xy)(np.random.default_rng(7000 + k))
+    r = sg.information_loss_null(fam, "knn:6", "auto", n_sim=n_sim, seed=0, covariate=x)
+    return {"covariate": name, "draw": k, "slope": r.surface.slope, "sd_ratio_10_90": r.surface.sd_ratio(),
+            "corr_with_log_density": float(np.corrcoef(x, log_density(base))[0, 1]),
+            "exits": r.exits, "p": r.simultaneous["p"], "statistic": r.simultaneous["statistic"],
+            "var_null_mean_40km": r.table.rows[-1]["var_null_mean"]}
+
+
+def placebos(n_sim, n_random=50, workers=6):
+    """The surface null with other proxies for settlement density and with
+    placebo covariates: the coordinates, and random surfaces with the same
+    spatial covariance as log population density."""
+    from multiprocessing import Pool
+    jobs = [(n, 0, n_sim) for n in ("log population density", "log tract area", "log distance to nearest tract",
+                                    "easting", "northing")]
+    jobs += [("random surface", k, n_sim) for k in range(n_random)]
+    with Pool(workers) as pool:
+        rows = pool.map(_placebo_job, jobs, chunksize=1)
+    write("H_placebos.csv", rows)
+    rnd = [r for r in rows if r["covariate"] == "random surface"]
+    print("  random surfaces: share with p > 0.05 =", np.mean([r["p"] > 0.05 for r in rnd]),
+          "median p =", np.median([r["p"] for r in rnd]))
+    return rows
+
+
 # ------------------------------------------------------------------ D
 def bh(p, q=0.05):
     p = np.asarray(p)
@@ -418,6 +529,10 @@ if __name__ == "__main__":
     if "G" in a.only:
         for r in zoning_size_match():
             print(" ", r)
+    if "H" in a.only:
+        surface_nulls(a.n_sim)
+    if "P" in a.only:
+        placebos(a.n_sim)
     if "D" in a.only:
         c, g = lisa_fdr()
         for r in c + g:

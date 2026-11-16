@@ -110,6 +110,19 @@ def test_nc_income_grid_null():
     assert r.exits >= exp["min"]
 
 
+def test_nc_income_grid_surface_null():
+    """Added in 0.3.0: with a variance surface in log population density, the
+    income trajectory on grids stays within the band (paper, Section 5.3)."""
+    exp = REG["nc_income_grid_surface_null"]
+    fam = D.nc_tracts_grid_family(cell_sizes_km=(5, 10, 20, 40), zoning=None)
+    a = fam.base.attributes
+    x = np.log(a["pop"] / a["area_km2"])
+    s = sg.fit_variance_surface(fam, x)
+    assert s.slope == pytest.approx(exp["slope"], abs=exp["slope_tolerance"])
+    r = sg.information_loss_null(fam, "knn:6", "auto", n_sim=exp["n_sim"], seed=0, covariate=s)
+    assert r.exits <= exp["max_exits"]
+
+
 def test_etopo_model_choice_and_null():
     fam = D.etopo_family(zoning=None)
     m = sg.fit_covariance(fam, "auto")

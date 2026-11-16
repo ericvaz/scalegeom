@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased (0.2.0)
+## 0.3.0
+
+A null for local variability that changes from place to place.
+
+- `information_loss_null(..., covariate=x)` runs the change-of-support null under Z(x) = mu + sigma(x) Y(x), with log sigma linear in a declared covariate and Y stationary. With a slope of zero it is the stationary null, so comparing the two tests whether variability tied to the covariate accounts for a departure. The bootstrap re-estimates the surface and the covariance on every simulated field.
+- `fit_variance_surface` estimates the slope from near-neighbour pairs, comparing pairs at the same separation through a free semivariance per distance bin, so that density is not confounded with distance on irregular supports. `VarianceSurface` holds the fitted surface.
+- `variance_surface_test` tests whether local variability changes with the covariate, against slopes estimated on fields from the stationary null.
+- `regularization_prediction` weights mean semivariances by the base measure, so that it predicts the between-unit share of the weighted variance that the trajectories report, and takes a variance surface (`scale=`). On lattices and other equal-weight supports the values are unchanged.
+- `ScaleProtocol.run(covariate=...)` adds the variance-surface null to the report (`null_surface`).
+- `examples/surface_calibration.py`: size and power of the stationary and variance-surface tests on the North Carolina tract support.
+- New tests: recovery of the slope, equality with the stationary null when the slope is zero, agreement of the extended Krige prediction with simulation, and a regression value for North Carolina income.
+
+## 0.2.0
 
 Changes made after a pre-submission review of the methods. Several change results, so regression values in `tests/benchmarks.json` were updated and are explained here.
 

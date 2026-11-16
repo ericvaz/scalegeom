@@ -116,16 +116,23 @@ class ScaleProtocol:
 
     # ---------------------------------------------------------- step (iii)
     def null_test(self, model="auto", n_sim: int = 100, width: float = 2.5, kind: str = "auto",
-                  seed: int | None = None):
+                  seed: int | None = None, covariate=None):
         """kind="covariance": information-loss (change-of-support) null;
         kind="zoning": random size-matched zonings (nested supports);
-        kind="auto": covariance for raster and grid families, both for nested."""
+        kind="auto": covariance for raster and grid families, both for nested.
+        covariate: run the change-of-support null with a variance surface in
+        this covariate as well (see information_loss_null); the result is
+        stored as "null_surface"."""
         from .null import information_loss_null, zoning_null
         seed = self.seed if seed is None else seed
         out = {}
         if kind in ("auto", "covariance"):
             out["covariance"] = information_loss_null(self.family, self.metric, model, n_sim, width, seed)
             self.results["null"] = out["covariance"]
+            if covariate is not None:
+                out["surface"] = information_loss_null(self.family, self.metric, model, n_sim, width, seed,
+                                                       covariate=covariate)
+                self.results["null_surface"] = out["surface"]
         if kind == "zoning" or (kind == "auto" and self.family.kind == "nested"):
             out["zoning"] = zoning_null(self.family, self.metric, n_sim, width, seed + 3000)
             self.results["zoning_null"] = out["zoning"]
@@ -148,9 +155,12 @@ class ScaleProtocol:
     # ---------------------------------------------------------- everything
     def run(self, null: bool = True, fgw: bool = True, invariance: bool = True, n_sim: int = 100,
             model="auto", width: float = 2.5, alpha: float = 0.5, max_nodes: int = 800,
-            figures: bool = True, title: str = "Scale-conditioned analysis", progress=None) -> Report:
+            figures: bool = True, title: str = "Scale-conditioned analysis", progress=None,
+            covariate=None) -> Report:
         """Run steps (i) to (iv) and the representation space; progress, if
-        given, is called as progress(percent, message)."""
+        given, is called as progress(percent, message). With covariate, the
+        change-of-support null is also run with a variance surface in that
+        covariate (table "null_surface")."""
         say = progress or (lambda pct, msg: None)
         rep = Report(title)
         rep.meta.update({"scalegeom_version": __version__, "metric": self.metric,
@@ -164,12 +174,18 @@ class ScaleProtocol:
         nres = None
         if null:
             say(30, f"Step (iii): change-of-support null ({n_sim} simulations)")
-            res = self.null_test(model, n_sim, width)
+            res = self.null_test(model, n_sim, width, covariate=covariate)
             if "covariance" in res:
                 nres = res["covariance"]
                 rep.add_table("null", nres.table)
                 rep.meta["null_exits"] = nres.exits
                 rep.meta["null_model"] = vars(nres.model)
+                rep.meta["null_simultaneous"] = nres.simultaneous
+            if "surface" in res:
+                sres = res["surface"]
+                rep.add_table("null_surface", sres.table)
+                rep.meta["null_surface_slope"] = sres.surface.slope
+                rep.meta["null_surface_simultaneous"] = sres.simultaneous
             if "zoning" in res:
                 rep.add_table("zoning_null", res["zoning"])
         if invariance and len(self.family.path) > 1:

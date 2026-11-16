@@ -35,6 +35,25 @@ from .table import Table
 MODELS = ("gaussian", "exponential", "spherical")
 
 
+def _near_neighbour_pairs(xy, h_max, k=10):
+    """Unique pairs formed by each unit and its k nearest neighbours, closer
+    than h_max. Returns (i, j, distance)."""
+    from scipy.spatial import cKDTree
+    n = len(xy)
+    k = int(min(k, n - 1))
+    if k < 1:
+        return np.array([], int), np.array([], int), np.array([])
+    d, j = cKDTree(xy).query(xy, k=k + 1)
+    i = np.repeat(np.arange(n), k)
+    jj, dd = j[:, 1:].ravel(), d[:, 1:].ravel()
+    a, b = np.minimum(i, jj), np.maximum(i, jj)
+    key = a.astype(np.int64) * n + b
+    _, first = np.unique(key, return_index=True)
+    a, b, dd = a[first], b[first], dd[first]
+    sel = (dd > 0) & (dd <= h_max)
+    return a[sel], b[sel], dd[sel]
+
+
 def _short_lag_semivariogram(z, xy, h_max, k=10, short_bins=8, min_pairs=30):
     """Exact semivariance of near-neighbour pairs (each unit with its k
     nearest neighbours) closer than h_max, in distance-quantile bins.
@@ -47,20 +66,7 @@ def _short_lag_semivariogram(z, xy, h_max, k=10, short_bins=8, min_pairs=30):
     examples/null_calibration_irregular.py), but in non-stationary data a
     semivariance that falls with distance at short lags is a sign that local
     variability differs between dense and sparse areas."""
-    from scipy.spatial import cKDTree
-    n = len(z)
-    k = int(min(k, n - 1))
-    if k < 1:
-        return np.array([]), np.array([]), np.array([])
-    d, j = cKDTree(xy).query(xy, k=k + 1)
-    i = np.repeat(np.arange(n), k)
-    jj, dd = j[:, 1:].ravel(), d[:, 1:].ravel()
-    a, b = np.minimum(i, jj), np.maximum(i, jj)
-    key = a.astype(np.int64) * n + b
-    _, first = np.unique(key, return_index=True)
-    a, b, dd = a[first], b[first], dd[first]
-    sel = (dd > 0) & (dd <= h_max)
-    a, b, dd = a[sel], b[sel], dd[sel]
+    a, b, dd = _near_neighbour_pairs(xy, h_max, k)
     if len(dd) < min_pairs:
         return np.array([]), np.array([]), np.array([])
     nb = int(max(1, min(short_bins, len(dd) // min_pairs)))
@@ -137,17 +143,34 @@ def fit_covariance(family, model: str = "auto", edges=DEFAULT_LAG_EDGES,
     return out
 
 
-def regularization_prediction(family, model: CovModel, n_pairs: int = 20_000, seed: int = 0) -> np.ndarray:
+def regularization_prediction(family, model: CovModel, n_pairs: int = 20_000, seed: int = 0,
+                              scale=None) -> np.ndarray:
     """Predicted share of base variance retained at each scale on the path,
     from Krige's relation D^2(v|D) = gbar(D,D) - gbar(v,v) with the fitted
-    model (block regularization of the covariance)."""
+    model (block regularization of the covariance).
+
+    Mean semivariances are weighted by the base measure, which makes the
+    prediction the expected between-unit share of the weighted variance,
+    the quantity the trajectories report. With `scale`, a local standard
+    deviation s_i for every base unit (a variance surface), the semivariance
+    between units i and j is (sill + nugget)(s_i^2 + s_j^2) / 2 -
+    s_i s_j sill rho(h_ij), and the same relation gives the share retained
+    when local variability differs from place to place."""
     rng = np.random.default_rng(seed)
     base = family.base
     xy = family.normalized(base)
     p = base.mass / base.mass.sum()
+    s = np.ones(base.n) if scale is None else np.asarray(scale, dtype=float)
+    total = model.sill + model.nugget
+
+    def gam(i, j):
+        h = np.hypot(xy[i, 0] - xy[j, 0], xy[i, 1] - xy[j, 1])
+        g = total * 0.5 * (s[i] ** 2 + s[j] ** 2) - s[i] * s[j] * model.sill * model.rho(h)
+        return np.where(i != j, g, 0.0)
+
     a = rng.choice(base.n, n_pairs, p=p)
     b = rng.choice(base.n, n_pairs, p=p)
-    gDD = float(np.mean(model.gamma(np.hypot(*(xy[a] - xy[b]).T))))
+    gDD = float(np.mean(gam(a, b)))
     out = []
     for rep in family.path:
         lab = rep.members
@@ -155,22 +178,176 @@ def regularization_prediction(family, model: CovModel, n_pairs: int = 20_000, se
         lab_s = lab[order]
         starts = np.searchsorted(lab_s, np.arange(rep.n))
         ends = np.searchsorted(lab_s, np.arange(rep.n), side="right")
-        gvv = np.zeros(rep.n)
+        within = 0.0
         for u in range(rep.n):
             idx = order[starts[u]:ends[u]]
             m = len(idx)
             if m < 2:
                 continue
-            pts = xy[idx]
+            wu = p[idx]
+            Wu = wu.sum()
             if m <= 256:
-                d = np.hypot(pts[:, None, 0] - pts[None, :, 0], pts[:, None, 1] - pts[None, :, 1])
-                gvv[u] = model.gamma(d).sum() / m ** 2
+                I, J = np.meshgrid(idx, idx, indexing="ij")
+                gvv = float(wu @ gam(I, J) @ wu) / Wu ** 2
             else:
-                i = rng.integers(0, m, 4000)
-                j = rng.integers(0, m, 4000)
-                gvv[u] = float(np.mean(model.gamma(np.hypot(*(pts[i] - pts[j]).T))))
-        out.append(1.0 - float(np.sum(rep.mass * gvv)) / gDD)
+                q = wu / Wu
+                i = rng.choice(idx, 4000, p=q)
+                j = rng.choice(idx, 4000, p=q)
+                gvv = float(np.mean(gam(i, j)))
+            within += Wu * gvv
+        out.append(1.0 - within / gDD)
     return np.array(out)
+
+
+# ---------------------------------------------------------------- variance surface
+
+@dataclass
+class VarianceSurface:
+    """Local standard deviation that changes with a covariate:
+    log sigma(x) = a + b c(x), with c the covariate standardized to mean 0
+    and SD 1 over the base units.
+
+    scale : sigma for every base unit, normalized so that its mean square
+        under the base measure is one.
+    slope : b, the change in log local SD per SD of the covariate. b = 0 is
+        the stationary null."""
+
+    slope: float
+    scale: np.ndarray
+    covariate: np.ndarray
+    name: str = "covariate"
+    raw: np.ndarray | None = None
+    n_pairs: int = 0
+    n_cells: int = 0
+
+    def rescale(self, values, mass):
+        """Centred values divided by the local SD: the field the stationary
+        covariance is fitted to."""
+        v = np.asarray(values, dtype=float)
+        w = np.asarray(mass, dtype=float)
+        return (v - np.sum(w * v) / w.sum()) / self.scale
+
+    def sd_ratio(self, lo: float = 10, hi: float = 90) -> float:
+        """Ratio of local SDs between the hi-th and lo-th percentiles of the covariate."""
+        c = self.covariate
+        return float(np.exp(self.slope * (np.percentile(c, hi) - np.percentile(c, lo))))
+
+
+def _surface_scale(slope, c, mass):
+    e = np.exp(2.0 * slope * c)
+    w = mass / mass.sum()
+    return np.sqrt(e / np.sum(w * e))
+
+
+def _covariate_array(family, covariate):
+    if isinstance(covariate, str):
+        attrs = getattr(family.base, "attributes", None) or {}
+        if covariate not in attrs:
+            raise ValueError(f"the base representation has no attribute {covariate!r}")
+        return covariate, np.asarray(attrs[covariate], dtype=float)
+    x = np.asarray(covariate, dtype=float)
+    if x.shape != (family.base.n,):
+        raise ValueError("covariate must have one value per base unit")
+    return "covariate", x
+
+
+def fit_variance_surface(family, covariate, values=None, name: str | None = None, k: int = 10,
+                         distance_bins: int = 12, classes: int = 5, min_pairs: int = 30,
+                         edges=DEFAULT_LAG_EDGES) -> VarianceSurface:
+    """Estimate how local variability changes with a covariate.
+
+    Under the model Z(x) = mu + sigma(x) Y(x), with Y stationary and
+    log sigma = a + b c, the semivariance of a pair of units is
+
+        gamma_ij = T (s_i - s_j)^2 / 2 + s_i s_j gamma_Y(h_ij),   s = exp(b c),
+
+    where T sets the overall variance and gamma_Y is the unknown semivariogram
+    of Y. The estimator uses the pairs formed by each base unit and its k
+    nearest neighbours that fall in the first lag bin. Pairs are grouped by
+    distance (distance_bins quantile bins) and, within each distance bin, by
+    the mean covariate of the pair (classes quantile classes). For a given b,
+    T is fixed by the standardization of the values, gamma_Y takes a free
+    value in every distance bin, and the group means of the semivariance are
+    fitted by least squares with weights N / gamma^2; b minimizes the
+    weighted residual sum of squares.
+
+    The free value per distance bin absorbs the correlation function, so b
+    compares pairs at the same separation in places with different covariate
+    values. On irregular supports this matters: close pairs come mostly from
+    dense areas, and a comparison that ignored distance would confound
+    density with separation. b = 0 is the stationary null.
+
+    covariate : one value per base unit, or the name of an attribute of the
+        base representation. Transform it first if needed (for example the
+        log of population density); it is standardized here.
+    values : base values to use in place of the observed ones (used by the
+        bootstrap)."""
+    from scipy.optimize import minimize_scalar
+    label, x = _covariate_array(family, covariate)
+    if not np.all(np.isfinite(x)):
+        raise ValueError("covariate has missing or infinite values")
+    sd = x.std()
+    c = (x - x.mean()) / (sd if sd > 0 else 1.0)
+    base = family.base
+    v = base.values if values is None else np.asarray(values, dtype=float)
+    z = (v - v.mean()) / (v.std() if v.std() > 0 else 1.0)
+    a, b, d = _near_neighbour_pairs(family.normalized(base), float(edges[1]), k)
+    if len(d) < 2 * min_pairs:
+        raise ValueError("too few near-neighbour pairs to estimate a variance surface")
+    q = np.quantile(d, np.linspace(0, 1, distance_bins + 1))
+    q[-1] += 1e-12
+    di = np.clip(np.searchsorted(q, d, side="right") - 1, 0, distance_bins - 1)
+    cm = 0.5 * (c[a] + c[b])
+    cq = np.quantile(cm, np.linspace(0, 1, classes + 1))
+    cq[-1] += 1e-12
+    ci = np.clip(np.searchsorted(cq, cm, side="right") - 1, 0, classes - 1)
+    cell = di * classes + ci
+    ncell = distance_bins * classes
+    cnt = np.bincount(cell, minlength=ncell).astype(float)
+    ok = cnt >= min_pairs
+    keep = ok[cell]
+    a, b, cell = a[keep], b[keep], cell[keep]
+    _, cell = np.unique(cell, return_inverse=True)
+    n_k = np.bincount(cell).astype(float)
+    g_k = np.bincount(cell, 0.5 * (z[a] - z[b]) ** 2) / n_k
+    d_k = np.unique(np.flatnonzero(ok) // classes, return_inverse=True)[1]
+    D = (d_k[:, None] == np.arange(d_k.max() + 1)[None, :]).astype(float)
+    wt = np.sqrt(n_k) / np.maximum(g_k, 1e-3 * max(g_k.max(), 1e-9))
+
+    def fit(slope):
+        s = np.exp(slope * c)
+        T = 1.0 / np.mean(s ** 2)
+        A = np.bincount(cell, 0.5 * T * (s[a] - s[b]) ** 2) / n_k
+        B = np.bincount(cell, s[a] * s[b]) / n_k
+        X = D * B[:, None]
+        coef = np.linalg.lstsq(X * wt[:, None], (g_k - A) * wt, rcond=None)[0]
+        return float(np.sum(((g_k - A - X @ coef) * wt) ** 2))
+
+    slope = float(minimize_scalar(fit, bounds=(-2.0, 2.0), method="bounded",
+                                  options={"xatol": 1e-4}).x)
+    return VarianceSurface(slope, _surface_scale(slope, c, base.mass), c, name or label, x,
+                           int(n_k.sum()), int(len(n_k)))
+
+
+def variance_surface_test(family, covariate, model="auto", n_sim: int = 200, seed: int = 0,
+                          name: str | None = None) -> dict:
+    """Does local variability change with the covariate?
+
+    The slope b of fit_variance_surface is compared with its distribution
+    under the stationary change-of-support null: fields are simulated from
+    the covariance fitted at the base, which has no variance surface, and the
+    slope is re-estimated on each. Returns the observed slope, the mean and SD
+    of the simulated slopes, and a two-sided Monte Carlo p-value."""
+    surface = fit_variance_surface(family, covariate, name=name)
+    if isinstance(model, str):
+        model = fit_covariance(family, model, seed=seed)
+    draw = _base_simulator(family, model)
+    rng = np.random.default_rng(seed)
+    sims = np.array([fit_variance_surface(family, surface.raw, values=draw(rng)).slope for _ in range(n_sim)])
+    p = float((1 + np.sum(np.abs(sims) >= abs(surface.slope))) / (n_sim + 1))
+    return {"name": surface.name, "slope": surface.slope, "sd_ratio_10_90": surface.sd_ratio(),
+            "null_mean": float(sims.mean()), "null_sd": float(sims.std(ddof=1)), "p": p, "n_sim": n_sim,
+            "surface": surface, "sims": sims}
 
 
 # ---------------------------------------------------------------- simulation null
@@ -183,6 +360,7 @@ class NullResult:
     width: float = 2.5
     n_sim: int = 0
     simultaneous: dict = field(default_factory=dict)
+    surface: VarianceSurface | None = None
 
     @property
     def exits(self) -> int:
@@ -222,7 +400,7 @@ def _with_base_values(family, values):
 def information_loss_null(family, metric: str = "knn:8", model="auto", n_sim: int = 100,
                           width: float = 2.5, seed: int = 0, observed: bool = True,
                           uncertainty: bool = True, weighted: bool = True,
-                          alpha: float = 0.05) -> NullResult:
+                          alpha: float = 0.05, covariate=None) -> NullResult:
     """Monte Carlo change-of-support band for the variance and Moran trajectories.
 
     model : a CovModel, or the name of a model to fit at the base scale.
@@ -240,25 +418,60 @@ def information_loss_null(family, metric: str = "knn:8", model="auto", n_sim: in
         result carries a test across all scales and both diagnostics at once:
         the statistic is the largest absolute standardized departure, and its
         reference distribution is the same statistic computed for each
-        simulated trajectory (result.simultaneous)."""
+        simulated trajectory (result.simultaneous).
+    covariate : None for the stationary null. Otherwise one value per base
+        unit, the name of a base attribute, or a fitted VarianceSurface: the
+        null then lets local variability change with the covariate,
+        Z(x) = mu + sigma(x) Y(x) with log sigma linear in the covariate and Y
+        stationary (fit_variance_surface). The covariance of Y is fitted to
+        the centred values divided by sigma, simulated fields are multiplied
+        by sigma before aggregation, and the bootstrap re-estimates both the
+        surface and the covariance on every simulated field. With a slope of
+        zero this is the stationary null, so comparing the two tests whether
+        variability tied to the covariate accounts for a departure from the
+        stationary null (see examples/surface_calibration.py)."""
+    base = family.base
+    surface = None
+    if covariate is not None:
+        surface = covariate if isinstance(covariate, VarianceSurface) else fit_variance_surface(family, covariate)
+        fit_family = _with_base_values(family, surface.rescale(base.values, base.mass))
+    else:
+        fit_family = family
     if isinstance(model, str):
-        model = fit_covariance(family, model, seed=seed)
+        model = fit_covariance(fit_family, model, seed=seed)
     weights = [row_standardize(induced_adjacency(r, metric, family)) for r in family.path]
     rng = np.random.default_rng(seed)
     V = np.empty((n_sim, len(family.path)))
     M = np.empty_like(V)
-    draw = _base_simulator(family, model)
+    slopes = np.full(n_sim, np.nan)
+    base_draw = _base_simulator(family, model)
     nug = getattr(model, "has_nugget", model.nugget > 0)
     for k in range(n_sim):
-        f = draw(rng)
+        f = base_draw(rng)
+        if surface is not None:
+            f = surface.scale * f
         if uncertainty:
-            refit = fit_covariance(_with_base_values(family, f), model.model, seed=seed + 1 + k, nugget=nug)
-            f = _base_simulator(family, refit)(rng)
+            if surface is not None:
+                sf = fit_variance_surface(family, surface.raw, values=f)
+                slopes[k] = sf.slope
+                refit = fit_covariance(_with_base_values(family, sf.rescale(f, base.mass)), model.model,
+                                       seed=seed + 1 + k, nugget=nug)
+                f = sf.scale * _base_simulator(family, refit)(rng)
+            else:
+                refit = fit_covariance(_with_base_values(family, f), model.model, seed=seed + 1 + k, nugget=nug)
+                f = _base_simulator(family, refit)(rng)
         V[k], M[k] = _trajectory(family, f, weights, weighted)
-    obs_v, obs_m = _trajectory(family, family.base.values, weights, weighted) if observed else (None, None)
-    pred = regularization_prediction(family, model, seed=seed)
-    t = Table(title=f"Change-of-support null ({n_sim} simulations, band = mean +/- {width:g} SD)",
-              note=f"Covariance fitted at the base scale: {model.model}, sill {model.sill:.3f}, "
+    obs_v, obs_m = _trajectory(family, base.values, weights, weighted) if observed else (None, None)
+    pred = regularization_prediction(family, model, seed=seed, scale=surface.scale if surface else None)
+    kind = "Change-of-support null" if surface is None else f"Change-of-support null with a variance surface in {surface.name}"
+    t = Table(title=f"{kind} ({n_sim} simulations, band = mean +/- {width:g} SD)",
+              note=(f"Variance surface: log local SD = a + b c, c = standardized {surface.name}; "
+                    f"b = {surface.slope:.3f} from {surface.n_pairs} near-neighbour pairs in {surface.n_cells} "
+                    f"distance-by-covariate groups, local SD ratio between the 90th and 10th percentiles of c "
+                    f"= {surface.sd_ratio():.2f}"
+                    + (f", bootstrap SD of b = {np.nanstd(slopes, ddof=1):.3f}" if uncertainty and n_sim > 2 else "")
+                    + ". The covariance below is that of the rescaled field. " if surface is not None else "") +
+                   f"Covariance fitted at the base scale: {model.model}, sill {model.sill:.3f}, "
                    f"length {model.length:.4f} (normalized units), nugget {model.nugget:.3f}"
                    + (" (selected by weighted fit among " + ", ".join(f"{k} {v:.1f}" for k, v in
                                                                     model.scores.items()) + "). "
@@ -299,7 +512,10 @@ def information_loss_null(family, metric: str = "knn:8", model="auto", n_sim: in
         t.note += (f" Simultaneous test across scales and both diagnostics: critical max |z| = {crit:.2f} "
                    f"at level {alpha:g}" + (f"; observed {simultaneous['statistic']:.2f}, "
                                             f"p = {simultaneous['p']:.3f}." if observed else "."))
-    return NullResult(model, t, {"var": V, "moran": M}, width, n_sim, simultaneous)
+    sims = {"var": V, "moran": M}
+    if surface is not None:
+        sims["slope"] = slopes
+    return NullResult(model, t, sims, width, n_sim, simultaneous, surface)
 
 
 def zoning_null(family, metric: str = "knn:6", n_sim: int = 100, width: float = 2.5, seed: int = 3000,

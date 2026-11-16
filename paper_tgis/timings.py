@@ -20,6 +20,7 @@ STAGES = [
     ("Elevation, blocks", "FGW along the path", "fam = D.etopo_family(); sg.representation_space(fam)"),
     ("Income, grids", "fit", "fam = D.nc_tracts_grid_family('median_income'); sg.fit_covariance(fam, 'auto')"),
     ("Income, grids", "change-of-support null, 100 sims", "fam = D.nc_tracts_grid_family('median_income', zoning=None); sg.information_loss_null(fam, 'knn:6', 'auto', n_sim=100)"),
+    ("Income, grids", "variance-surface null, 100 sims", "fam = D.nc_tracts_grid_family('median_income', zoning=None); a = fam.base.attributes; import numpy as np; sg.information_loss_null(fam, 'knn:6', 'auto', n_sim=100, covariate=np.log(a['pop'] / a['area_km2']))"),
     ("Income, counties", "zoning null, 100 size-matched zonings", "fam = D.nc_tracts_family('median_income'); sg.zoning_null(fam, 'queen', 100)"),
     ("Broadband, tracts", "local Moran, 3 rules, 999 permutations", "rep = D.nc_tracts('pct_broadband'); sg.metric_sensitivity(rep, ['knn:6', 'queen', 'hops:2'], figures=False)"),
 ]
